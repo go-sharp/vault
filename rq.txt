@@ -1,0 +1,11 @@
+interface file:
+size()
+name()
+fullname()
+path()
+ext()
+mime()
+read() io.ReaderSeeker
+
+interface vaulter:
+asset(key string) file
