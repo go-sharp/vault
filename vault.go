@@ -6,7 +6,9 @@
 package vault
 
 import (
+	"bytes"
 	"fmt"
+	"go/format"
 	"html/template"
 	"log"
 	"os"
@@ -16,15 +18,12 @@ import (
 
 const (
 	ttImportTempl             = "imports"
-	ttDebugImportTempl        = "debugImports"
 	ttSharedTypesTempl        = "sharedTypes"
 	ttInMemoryFileMethodTempl = "inMemoryFileMethod"
-	ttDebugFileMethodTempl    = "debugFileMethod"
+	ttDebugFileTempl          = "debugFile"
 	ttVaultAssetBinTempl      = "vaultAssetBin"
 	ttMemLoaderTempl          = "memLoader"
 	ttMemNewLoaderTempl       = "memNewLoader"
-	ttDebugLoaderTempl        = "debugLoader"
-	ttDebugNewLoaderTempl     = "debugNewLoader"
 	ttFileHeaderTempl         = "fileHeaderTempl"
 )
 
@@ -32,17 +31,13 @@ var ttRepo *template.Template
 
 func init() {
 	ttRepo = template.Must(template.New(ttImportTempl).Parse(importTempl))
-	ttRepo = template.Must(ttRepo.New(ttDebugImportTempl).Parse(debugImportTempl))
+	ttRepo = template.Must(ttRepo.New(ttDebugFileTempl).Parse(debugFileTemp))
 	ttRepo = template.Must(ttRepo.New(ttSharedTypesTempl).Parse(sharedTypesTempl))
 	ttRepo = template.Must(ttRepo.New(ttInMemoryFileMethodTempl).Parse(inMemoryFileMethodTempl))
-	ttRepo = template.Must(ttRepo.New(ttDebugFileMethodTempl).Parse(debugFileMethodTemp))
 	ttRepo = template.Must(ttRepo.New(ttVaultAssetBinTempl).Parse(vaultAssetBinTempl))
 	ttRepo = template.Must(ttRepo.New(ttMemLoaderTempl).Parse(memLoaderTempl))
 	ttRepo = template.Must(ttRepo.New(ttMemNewLoaderTempl).Parse(memNewLoaderTempl))
-	ttRepo = template.Must(ttRepo.New(ttDebugLoaderTempl).Parse(debugLoaderTempl))
-	ttRepo = template.Must(ttRepo.New(ttDebugNewLoaderTempl).Parse(debugNewLoaderTempl))
 	ttRepo = template.Must(ttRepo.New(ttFileHeaderTempl).Parse(fileHeaderTempl))
-
 }
 
 // Generator creates a vault with files in there binary representation.
@@ -56,13 +51,47 @@ type Generator struct {
 // Run starts the vault generation, may panic if an error occurs.
 func (g *Generator) Run() {
 	log.Println("starting vault generation...")
-	g.createShared()
+	if err := os.MkdirAll(g.config.dest, 0755); err != nil {
+		log.Fatalln("failed to create destination folder: ", err)
+	}
+
+	// Create shared and debug files
+	g.createStaticFile(g.sharedFile,
+		func(buf *bytes.Buffer) { ttRepo.ExecuteTemplate(buf, ttFileHeaderTempl, g.config.pkgName) },
+		func(buf *bytes.Buffer) { ttRepo.ExecuteTemplate(buf, ttImportTempl, nil) },
+		func(buf *bytes.Buffer) { ttRepo.ExecuteTemplate(buf, ttSharedTypesTempl, nil) })
+
+	g.createStaticFile(g.debugFile,
+		func(buf *bytes.Buffer) { fmt.Fprintf(buf, "// +build debug\n\n") },
+		func(buf *bytes.Buffer) { ttRepo.ExecuteTemplate(buf, ttFileHeaderTempl, g.config.pkgName) },
+		func(buf *bytes.Buffer) {
+			ttRepo.ExecuteTemplate(buf, ttDebugFileTempl, map[string]string{
+				"Suffix": g.config.name,
+				"Base":   "test", // Todo compute correct base path
+			})
+		})
 }
 
-func (g *Generator) createShared() {
-	sf, err := os.OpenFile(g.sharedFile, os.O_TRUNC|os.O_WRONLY, 0755)
+func (g *Generator) createStaticFile(fi string, fns ...func(b *bytes.Buffer)) {
+	if _, err := os.Stat(fi); err == nil {
+		log.Printf("file '%v' already exists, skipping creation...", fi)
+		return
+	}
+	log.Printf("creating file '%v'...", fi)
+
+	var buf bytes.Buffer
+	for i := range fns {
+		fns[i](&buf)
+	}
+
+	ff, err := format.Source(buf.Bytes())
 	if err != nil {
-		log.Fatalf("failed to create shared vault file for resource '%v': %v\n", g.config.name, err)
+		log.Fatalf("failed to format file: %v\n%s\n", err, buf.Bytes())
+	}
+
+	sf, err := os.OpenFile(fi, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0755)
+	if err != nil {
+		log.Fatalf("failed to create vault file for resource '%v': %v\n", g.config.name, err)
 	}
 	defer func() {
 		if err := sf.Close(); err != nil {
@@ -70,9 +99,9 @@ func (g *Generator) createShared() {
 		}
 	}()
 
-	ttRepo.ExecuteTemplate(sf, ttFileHeaderTempl, nil)
-	ttRepo.ExecuteTemplate(sf, ttImportTempl, nil)
-	ttRepo.ExecuteTemplate(sf, ttSharedTypesTempl, nil)
+	if _, err := sf.Write(ff); err != nil {
+		log.Fatalf("failed to write to file: %v\n", err)
+	}
 }
 
 // GeneratorConfig configures the vault generator.
@@ -99,7 +128,7 @@ func NewGenerator(src, dest string, options ...GeneratorOption) Generator {
 	initGeneratorConfig(&cfg)
 	g := Generator{config: cfg}
 
-	g.sharedFile = cleanSlashedPath(dest, fmt.Sprintf("shared_%v_vault.go", cfg.name))
+	g.sharedFile = cleanSlashedPath(dest, fmt.Sprintf("shared_%v_vault.go", cfg.pkgName))
 	g.debugFile = cleanSlashedPath(dest, fmt.Sprintf("debug_%v_vault.go", cfg.name))
 	g.releaseFile = cleanSlashedPath(dest, fmt.Sprintf("%v_vault.go", cfg.name))
 	return g
