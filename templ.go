@@ -5,7 +5,7 @@
 
 package vault
 
-const importTempl = `
+const sharedTypesTempl = `
 import (
 	"bytes"
 	"errors"
@@ -13,9 +13,6 @@ import (
 	"time"
 )
 
-`
-
-const sharedTypesTempl = `
 // ErrNotFound is returned if the requested file was not found.
 var ErrNotFound = errors.New("file not found")
 
@@ -56,7 +53,7 @@ func (m *memReader) Close() error {
 type memFile struct {
 	idx     int
 	name    string
-				modTime time.Time
+	modTime time.Time
 	path    string
 	base    string
 	size    int64
@@ -64,8 +61,14 @@ type memFile struct {
 
 `
 
-// Template for the in memory memFile methods.
-const inMemoryFileMethodTempl = `
+const vaultAssetBinTempl = `var vaultAssetBin{{.Suffix}} = [][]byte{}`
+
+const releaseFileTempl = `
+import (
+	"bytes"
+	"time"
+)
+
 func (m memFile) Read() ReadSeekCloser {
 	return &memReader{Reader: bytes.NewReader(vaultAssetBin{{.Suffix}}[m.idx])}
 }
@@ -86,33 +89,25 @@ func (m memFile) Path() string {
 	return m.path
 }
 
-`
-
-const vaultAssetBinTempl = `var vaultAssetBin{{.Suffix}} = [][]byte{}`
-
-const memLoaderTempl = `
 type loader struct {
-	fm map[string]File
+	fm map[string]memFile
 }
 
 func (l loader) Load(name string) (File, error) {
 	if v, ok := l.fm[name]; ok {
-		return v, nil
+		return &v, nil
 	}
 	return nil, ErrNotFound
 }
 
-`
-
-const memNewLoaderTempl = `
 // New{{.Suffix}}Loader returns a new AssetLoader for the {{.Suffix}} resources.
 func New{{.Suffix}}Loader() AssetLoader {
 	loader := &loader{
 		fm: map[string]memFile{
 		{{- range $idx, $el := .Files }}
-			"{{$el.Path}}/{{$el.Name}}": File{idx: {{$idx}}, name: "{{$el.Name}}", modTime: time.Unix({{$el.ModTime.Unix}}, 0), path: "{{$el.Path}}", size: {{$el.Size}}},
+			"{{$el.Path}}/{{$el.Name}}": memFile{idx: {{$idx}}, name: "{{$el.Name}}", modTime: time.Unix({{$el.ModTime.Unix}}, 0), path: "{{$el.Path}}", size: {{$el.Size}}},
 		{{- end}}
-		}
+		},
 	}
 	return loader
 }
@@ -177,7 +172,7 @@ func (d debugLoader) Load(name string) (File, error) {
 }
 
 func getFullPath(b, p string) string {
-	return path.Clean(fmt.Sprintf("%v%v%v", b, os.PathSeparator, p))
+	return path.Clean(fmt.Sprintf("%v/%v", b, p))
 }
 
 // New{{.Suffix}}Loader returns a new AssetLoader for the {{.Suffix}} resources.

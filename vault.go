@@ -8,36 +8,51 @@ package vault
 import (
 	"bytes"
 	"fmt"
-	"go/format"
 	"html/template"
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 )
 
 const (
-	ttImportTempl             = "imports"
-	ttSharedTypesTempl        = "sharedTypes"
-	ttInMemoryFileMethodTempl = "inMemoryFileMethod"
-	ttDebugFileTempl          = "debugFile"
-	ttVaultAssetBinTempl      = "vaultAssetBin"
-	ttMemLoaderTempl          = "memLoader"
-	ttMemNewLoaderTempl       = "memNewLoader"
-	ttFileHeaderTempl         = "fileHeaderTempl"
+	ttSharedTypesTempl   = "sharedTypes"
+	ttDebugFileTempl     = "debugFile"
+	ttVaultAssetBinTempl = "vaultAssetBin"
+	ttReleaseFileTempl   = "releaseFile"
+	ttFileHeaderTempl    = "fileHeaderTempl"
 )
 
 var ttRepo *template.Template
 
 func init() {
-	ttRepo = template.Must(template.New(ttImportTempl).Parse(importTempl))
-	ttRepo = template.Must(ttRepo.New(ttDebugFileTempl).Parse(debugFileTemp))
+	ttRepo = template.Must(template.New(ttDebugFileTempl).Parse(debugFileTemp))
 	ttRepo = template.Must(ttRepo.New(ttSharedTypesTempl).Parse(sharedTypesTempl))
-	ttRepo = template.Must(ttRepo.New(ttInMemoryFileMethodTempl).Parse(inMemoryFileMethodTempl))
 	ttRepo = template.Must(ttRepo.New(ttVaultAssetBinTempl).Parse(vaultAssetBinTempl))
-	ttRepo = template.Must(ttRepo.New(ttMemLoaderTempl).Parse(memLoaderTempl))
-	ttRepo = template.Must(ttRepo.New(ttMemNewLoaderTempl).Parse(memNewLoaderTempl))
+	ttRepo = template.Must(ttRepo.New(ttReleaseFileTempl).Parse(releaseFileTempl))
 	ttRepo = template.Must(ttRepo.New(ttFileHeaderTempl).Parse(fileHeaderTempl))
+}
+
+type patterns []string
+
+func (p patterns) matches(s string) bool {
+	var ok bool
+	var err error
+	for _, pat := range p {
+		ok, err = regexp.MatchString(pat, s)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		if ok {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Generator creates a vault with files in there binary representation.
@@ -58,25 +73,102 @@ func (g *Generator) Run() {
 	// Create shared and debug files
 	g.createStaticFile(g.sharedFile,
 		func(buf *bytes.Buffer) { ttRepo.ExecuteTemplate(buf, ttFileHeaderTempl, g.config.pkgName) },
-		func(buf *bytes.Buffer) { ttRepo.ExecuteTemplate(buf, ttImportTempl, nil) },
 		func(buf *bytes.Buffer) { ttRepo.ExecuteTemplate(buf, ttSharedTypesTempl, nil) })
 
+	basePath := getBasePath(g.config)
 	g.createStaticFile(g.debugFile,
 		func(buf *bytes.Buffer) { fmt.Fprintf(buf, "// +build debug\n\n") },
 		func(buf *bytes.Buffer) { ttRepo.ExecuteTemplate(buf, ttFileHeaderTempl, g.config.pkgName) },
 		func(buf *bytes.Buffer) {
 			ttRepo.ExecuteTemplate(buf, ttDebugFileTempl, map[string]string{
-				"Suffix": g.config.name,
-				"Base":   "test", // Todo compute correct base path
+				"Suffix": strings.Title(g.config.name),
+				"Base":   basePath,
 			})
 		})
+
+	g.createVault(walkSrcDirectory(basePath, g.config))
+}
+
+func (g *Generator) createVault(ch <-chan fileItem) {
+	var files []fileModel
+	for f := range ch {
+		files = append(files, fileModel{
+			Name:    f.fi.Name(),
+			Path:    getPath(f.path),
+			Size:    f.fi.Size(),
+			ModTime: f.fi.ModTime(),
+		})
+	}
+
+	g.createStaticFile(g.releaseFile,
+		func(buf *bytes.Buffer) { ttRepo.ExecuteTemplate(buf, ttFileHeaderTempl, g.config.pkgName) },
+		func(buf *bytes.Buffer) {
+			ttRepo.ExecuteTemplate(buf, ttReleaseFileTempl, map[string]interface{}{
+				"Suffix": strings.Title(g.config.name),
+				"Files":  files,
+			})
+		},
+	)
+}
+
+func getPath(p string) string {
+	idx := strings.LastIndex(p, "/")
+	if idx == -1 {
+		return ""
+	}
+
+	return p[:idx]
+}
+
+func walkSrcDirectory(src string, cfg GeneratorConfig) <-chan fileItem {
+	ch := make(chan fileItem, 10)
+
+	go func() {
+		err := filepath.Walk(src, func(path string, fi os.FileInfo, err error) error {
+			// Do not process the source directory
+			if path == src {
+				return nil
+			}
+
+			// Skip any directory if recursive is set to false (default)
+			if !cfg.recursiv && fi.IsDir() {
+				log.Printf("skipping directory '%v'...\n", path)
+				return filepath.SkipDir
+			}
+
+			vaultPath := filepath.Clean("/" + filepath.ToSlash(strings.TrimLeft(path, src)))
+			// If include is set, then only process matching files
+			var skip bool
+			if len(cfg.incl) > 0 {
+				skip = !cfg.incl.matches(vaultPath) || cfg.excl.matches(vaultPath)
+			} else {
+				skip = cfg.excl.matches(vaultPath)
+			}
+
+			switch {
+			case skip && fi.IsDir():
+				log.Printf("skipping directory '%v'...\n", vaultPath)
+				return filepath.SkipDir
+			case skip:
+				log.Printf("skipping file '%v'...\n", vaultPath)
+				return nil
+			}
+
+			if !fi.IsDir() {
+				ch <- fileItem{path: vaultPath, fi: fi}
+			}
+			return nil
+		})
+		if err != nil {
+			log.Fatalf("failed to walk source directory '%v': %v", src, err)
+		}
+		close(ch)
+	}()
+
+	return ch
 }
 
 func (g *Generator) createStaticFile(fi string, fns ...func(b *bytes.Buffer)) {
-	if _, err := os.Stat(fi); err == nil {
-		log.Printf("file '%v' already exists, skipping creation...", fi)
-		return
-	}
 	log.Printf("creating file '%v'...", fi)
 
 	var buf bytes.Buffer
@@ -84,10 +176,10 @@ func (g *Generator) createStaticFile(fi string, fns ...func(b *bytes.Buffer)) {
 		fns[i](&buf)
 	}
 
-	ff, err := format.Source(buf.Bytes())
-	if err != nil {
-		log.Fatalf("failed to format file: %v\n%s\n", err, buf.Bytes())
-	}
+	ff := buf.Bytes() //, err := format.Source(buf.Bytes())
+	// if err != nil {
+	// 	log.Fatalf("failed to format file: %v\n%s\n", err, buf.Bytes())
+	// }
 
 	sf, err := os.OpenFile(fi, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0755)
 	if err != nil {
@@ -111,8 +203,8 @@ type GeneratorConfig struct {
 	relPath  string
 	name     string
 	pkgName  string
-	excl     []string
-	incl     []string
+	excl     patterns
+	incl     patterns
 	recursiv bool
 }
 
@@ -210,4 +302,24 @@ func RelativePathOption(path string) GeneratorOption {
 	return func(c *GeneratorConfig) {
 		c.relPath = path
 	}
+}
+
+func getBasePath(cfg GeneratorConfig) string {
+	if cfg.relPath == "" {
+		return filepath.Clean(filepath.ToSlash(cfg.src))
+	}
+
+	return filepath.Clean(filepath.ToSlash(cfg.relPath))
+}
+
+type fileModel struct {
+	Name, Path string
+	ModTime    time.Time
+	Size       int64
+	fi         os.FileInfo
+}
+
+type fileItem struct {
+	path string
+	fi   os.FileInfo
 }
