@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -18,11 +19,10 @@ import (
 )
 
 const (
-	ttSharedTypesTempl   = "sharedTypes"
-	ttDebugFileTempl     = "debugFile"
-	ttVaultAssetBinTempl = "vaultAssetBin"
-	ttReleaseFileTempl   = "releaseFile"
-	ttFileHeaderTempl    = "fileHeaderTempl"
+	ttSharedTypesTempl = "sharedTypes"
+	ttDebugFileTempl   = "debugFile"
+	ttReleaseFileTempl = "releaseFile"
+	ttFileHeaderTempl  = "fileHeaderTempl"
 )
 
 var ttRepo *template.Template
@@ -30,7 +30,6 @@ var ttRepo *template.Template
 func init() {
 	ttRepo = template.Must(template.New(ttDebugFileTempl).Parse(debugFileTemp))
 	ttRepo = template.Must(ttRepo.New(ttSharedTypesTempl).Parse(sharedTypesTempl))
-	ttRepo = template.Must(ttRepo.New(ttVaultAssetBinTempl).Parse(vaultAssetBinTempl))
 	ttRepo = template.Must(ttRepo.New(ttReleaseFileTempl).Parse(releaseFileTempl))
 	ttRepo = template.Must(ttRepo.New(ttFileHeaderTempl).Parse(fileHeaderTempl))
 }
@@ -91,13 +90,18 @@ func (g *Generator) Run() {
 
 func (g *Generator) createVault(ch <-chan fileItem) {
 	var files []fileModel
+	var offset int64
 	for f := range ch {
 		files = append(files, fileModel{
-			Name:    f.fi.Name(),
-			Path:    getPath(f.path),
-			Size:    f.fi.Size(),
-			ModTime: f.fi.ModTime(),
+			Name:     f.fi.Name(),
+			Path:     getPath(f.path),
+			Size:     f.fi.Size(),
+			ModTime:  f.fi.ModTime(),
+			Offset:   offset,
+			fullpath: f.fullpath,
 		})
+		fmt.Println("OFFSET: ", offset, " SIZE: ", f.fi.Size())
+		offset += f.fi.Size()
 	}
 
 	g.createStaticFile(g.releaseFile,
@@ -109,6 +113,42 @@ func (g *Generator) createVault(ch <-chan fileItem) {
 			})
 		},
 	)
+
+	file, err := os.OpenFile(g.releaseFile, os.O_WRONLY|os.O_APPEND, 0755)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	w := &writer{f: file}
+	fmt.Fprintf(w, "\nvar vaultAssetBin%v = [...]byte{\n", strings.Title(g.config.name))
+
+	var buf = make([]byte, 32)
+	for i := range files {
+		log.Printf("processing file %v...", files[i].fullpath)
+		f, err := os.Open(files[i].fullpath)
+		if err != nil {
+			log.Fatalf("failed to read file: %v", err)
+		}
+
+		var offset int64
+		var n int
+		for err == nil {
+			n, err = f.ReadAt(buf, offset)
+			if err != nil && err != io.EOF {
+				log.Fatalf("failed to read file: %v", err)
+			}
+
+			for i := 0; i < n; i++ {
+				fmt.Fprintf(w, "%#x, ", buf[i])
+			}
+			fmt.Fprintf(w, "\n")
+			offset += int64(n)
+		}
+		f.Close()
+	}
+
+	fmt.Fprintf(w, "}\n")
+	w.Close()
 }
 
 func getPath(p string) string {
@@ -155,7 +195,7 @@ func walkSrcDirectory(src string, cfg GeneratorConfig) <-chan fileItem {
 			}
 
 			if !fi.IsDir() {
-				ch <- fileItem{path: vaultPath, fi: fi}
+				ch <- fileItem{path: vaultPath, fi: fi, fullpath: path}
 			}
 			return nil
 		})
@@ -220,9 +260,9 @@ func NewGenerator(src, dest string, options ...GeneratorOption) Generator {
 	initGeneratorConfig(&cfg)
 	g := Generator{config: cfg}
 
-	g.sharedFile = cleanSlashedPath(dest, fmt.Sprintf("shared_%v_vault.go", cfg.pkgName))
+	g.sharedFile = cleanSlashedPath(dest, fmt.Sprintf("shared_%v_vault.go", cfg.name))
 	g.debugFile = cleanSlashedPath(dest, fmt.Sprintf("debug_%v_vault.go", cfg.name))
-	g.releaseFile = cleanSlashedPath(dest, fmt.Sprintf("%v_vault.go", cfg.name))
+	g.releaseFile = cleanSlashedPath(dest, fmt.Sprintf("release_%v_vault.go", cfg.name))
 	return g
 }
 
@@ -313,13 +353,31 @@ func getBasePath(cfg GeneratorConfig) string {
 }
 
 type fileModel struct {
-	Name, Path string
-	ModTime    time.Time
-	Size       int64
-	fi         os.FileInfo
+	Name, Path   string
+	Size, Offset int64
+	ModTime      time.Time
+	fullpath     string
 }
 
 type fileItem struct {
-	path string
-	fi   os.FileInfo
+	path, fullpath string
+	fi             os.FileInfo
+}
+
+type writer struct {
+	f *os.File
+}
+
+func (w *writer) Write(b []byte) (n int, err error) {
+	n, err = w.f.Write(b)
+	if err != nil {
+		log.Fatalf("failed to write to file: %v", err)
+	}
+	return n, err
+}
+
+func (w *writer) Close() {
+	if err := w.f.Close(); err != nil {
+		log.Fatalf("failed to close file: %v", err)
+	}
 }

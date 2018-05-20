@@ -51,7 +51,7 @@ func (m *memReader) Close() error {
 }
 
 type memFile struct {
-	idx     int
+	offset  int64
 	name    string
 	modTime time.Time
 	path    string
@@ -61,8 +61,6 @@ type memFile struct {
 
 `
 
-const vaultAssetBinTempl = `var vaultAssetBin{{.Suffix}} = [][]byte{}`
-
 const releaseFileTempl = `
 import (
 	"bytes"
@@ -70,7 +68,7 @@ import (
 )
 
 func (m memFile) Read() ReadSeekCloser {
-	return &memReader{Reader: bytes.NewReader(vaultAssetBin{{.Suffix}}[m.idx])}
+	return &memReader{Reader: bytes.NewReader(vaultAssetBin{{.Suffix}}[m.offset:m.offset+m.size])}
 }
 
 func (m memFile) Size() int64 {
@@ -104,8 +102,8 @@ func (l loader) Load(name string) (File, error) {
 func New{{.Suffix}}Loader() AssetLoader {
 	loader := &loader{
 		fm: map[string]memFile{
-		{{- range $idx, $el := .Files }}
-			"{{$el.Path}}/{{$el.Name}}": memFile{idx: {{$idx}}, name: "{{$el.Name}}", modTime: time.Unix({{$el.ModTime.Unix}}, 0), path: "{{$el.Path}}", size: {{$el.Size}}},
+		{{- range  $el := .Files }}
+			"{{$el.Path}}/{{$el.Name}}": memFile{offset: {{$el.Offset}}, name: "{{$el.Name}}", modTime: time.Unix({{$el.ModTime.Unix}}, 0), path: "{{$el.Path}}", size: {{$el.Size}}},
 		{{- end}}
 		},
 	}
