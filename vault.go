@@ -105,6 +105,7 @@ func (g *Generator) createVault(ch <-chan fileItem) {
 	}
 
 	g.createStaticFile(g.releaseFile,
+		func(buf *bytes.Buffer) { fmt.Fprintf(buf, "// +build !debug\n\n") },
 		func(buf *bytes.Buffer) { ttRepo.ExecuteTemplate(buf, ttFileHeaderTempl, g.config.pkgName) },
 		func(buf *bytes.Buffer) {
 			ttRepo.ExecuteTemplate(buf, ttReleaseFileTempl, map[string]interface{}{
@@ -139,7 +140,7 @@ func (g *Generator) createVault(ch <-chan fileItem) {
 			}
 
 			for i := 0; i < n; i++ {
-				fmt.Fprintf(w, "%#x, ", buf[i])
+				fmt.Fprintf(w, "%#x,", buf[i])
 			}
 			fmt.Fprintf(w, "\n")
 			offset += int64(n)
