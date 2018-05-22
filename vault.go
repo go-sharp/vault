@@ -7,9 +7,12 @@ package vault
 
 import (
 	"bytes"
+	"compress/zlib"
 	"fmt"
+	"go/format"
 	"html/template"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -89,67 +92,74 @@ func (g *Generator) Run() {
 }
 
 func (g *Generator) createVault(ch <-chan fileItem) {
+	file, err := os.OpenFile(g.releaseFile, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0755)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	w := &writer{f: file}
+
+	// Write build tags
+	fmt.Fprintf(w, "// +build !debug\n\n")
+	// Execute header template
+	ttRepo.ExecuteTemplate(w, ttFileHeaderTempl, g.config.pkgName)
+	// Write binary data
+	var files = processFiles(strings.Title(g.config.name), w, ch)
+	// Write release file template
+	ttRepo.ExecuteTemplate(w, ttReleaseFileTempl, map[string]interface{}{
+		"Suffix": strings.Title(g.config.name),
+		"Files":  files,
+	})
+
+	w.Close()
+}
+
+func processFiles(assetName string, w io.Writer, ch <-chan fileItem) []fileModel {
 	var files []fileModel
 	var offset int64
+
+	fmt.Fprintf(w, "\nvar vaultAssetBin%v = \"", assetName)
+
 	for f := range ch {
+		log.Printf("processing file '%v'...\n", f.fullpath)
+		of, err := os.Open(f.fullpath)
+		if err != nil {
+			log.Fatalf("failed to read file: %v\n", err)
+		}
+
+		// create a binary to string literal writer
+		sw := &binToStrWriter{w: w}
+		zw, err := zlib.NewWriterLevel(sw, zlib.BestCompression)
+		if err != nil {
+			log.Fatalf("failed to create zlib writer: %v\n", err)
+		}
+
+		// read source file into byte slice
+		b, err := ioutil.ReadAll(of)
+		if err != nil {
+			log.Fatalf("failed to read file '%v': %v", f.fullpath, err)
+		}
+
+		// write and close the zlib writer
+		zw.Write(b)
+		if err = zw.Close(); err != nil {
+			log.Fatalf("failed to close zlib writer: %v\n", err)
+		}
+
 		files = append(files, fileModel{
 			Name:     f.fi.Name(),
 			Path:     getPath(f.path),
 			Size:     f.fi.Size(),
 			ModTime:  f.fi.ModTime(),
 			Offset:   offset,
+			Length:   sw.length,
 			fullpath: f.fullpath,
 		})
-		fmt.Println("OFFSET: ", offset, " SIZE: ", f.fi.Size())
-		offset += f.fi.Size()
+
+		offset += sw.length
 	}
 
-	g.createStaticFile(g.releaseFile,
-		func(buf *bytes.Buffer) { fmt.Fprintf(buf, "// +build !debug\n\n") },
-		func(buf *bytes.Buffer) { ttRepo.ExecuteTemplate(buf, ttFileHeaderTempl, g.config.pkgName) },
-		func(buf *bytes.Buffer) {
-			ttRepo.ExecuteTemplate(buf, ttReleaseFileTempl, map[string]interface{}{
-				"Suffix": strings.Title(g.config.name),
-				"Files":  files,
-			})
-		},
-	)
-
-	file, err := os.OpenFile(g.releaseFile, os.O_WRONLY|os.O_APPEND, 0755)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	w := &writer{f: file}
-	fmt.Fprintf(w, "\nvar vaultAssetBin%v = [...]byte{\n", strings.Title(g.config.name))
-
-	var buf = make([]byte, 32)
-	for i := range files {
-		log.Printf("processing file %v...", files[i].fullpath)
-		f, err := os.Open(files[i].fullpath)
-		if err != nil {
-			log.Fatalf("failed to read file: %v", err)
-		}
-
-		var offset int64
-		var n int
-		for err == nil {
-			n, err = f.ReadAt(buf, offset)
-			if err != nil && err != io.EOF {
-				log.Fatalf("failed to read file: %v", err)
-			}
-
-			for i := 0; i < n; i++ {
-				fmt.Fprintf(w, "%#x,", buf[i])
-			}
-			fmt.Fprintf(w, "\n")
-			offset += int64(n)
-		}
-		f.Close()
-	}
-
-	fmt.Fprintf(w, "}\n")
-	w.Close()
+	fmt.Fprintln(w, "\"")
+	return files
 }
 
 func getPath(p string) string {
@@ -175,6 +185,8 @@ func walkSrcDirectory(src string, cfg GeneratorConfig) <-chan fileItem {
 			if !cfg.recursiv && fi.IsDir() {
 				log.Printf("skipping directory '%v'...\n", path)
 				return filepath.SkipDir
+			} else if fi.IsDir() {
+				return nil
 			}
 
 			vaultPath := filepath.Clean("/" + filepath.ToSlash(strings.TrimLeft(path, src)))
@@ -186,11 +198,7 @@ func walkSrcDirectory(src string, cfg GeneratorConfig) <-chan fileItem {
 				skip = cfg.excl.matches(vaultPath)
 			}
 
-			switch {
-			case skip && fi.IsDir():
-				log.Printf("skipping directory '%v'...\n", vaultPath)
-				return filepath.SkipDir
-			case skip:
+			if skip {
 				log.Printf("skipping file '%v'...\n", vaultPath)
 				return nil
 			}
@@ -217,10 +225,10 @@ func (g *Generator) createStaticFile(fi string, fns ...func(b *bytes.Buffer)) {
 		fns[i](&buf)
 	}
 
-	ff := buf.Bytes() //, err := format.Source(buf.Bytes())
-	// if err != nil {
-	// 	log.Fatalf("failed to format file: %v\n%s\n", err, buf.Bytes())
-	// }
+	ff, err := format.Source(buf.Bytes())
+	if err != nil {
+		log.Fatalf("failed to format file: %v\n%s\n", err, buf.Bytes())
+	}
 
 	sf, err := os.OpenFile(fi, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0755)
 	if err != nil {
@@ -354,10 +362,10 @@ func getBasePath(cfg GeneratorConfig) string {
 }
 
 type fileModel struct {
-	Name, Path   string
-	Size, Offset int64
-	ModTime      time.Time
-	fullpath     string
+	Name, Path           string
+	Size, Offset, Length int64
+	ModTime              time.Time
+	fullpath             string
 }
 
 type fileItem struct {
@@ -381,4 +389,41 @@ func (w *writer) Close() {
 	if err := w.f.Close(); err != nil {
 		log.Fatalf("failed to close file: %v", err)
 	}
+}
+
+type binToStrWriter struct {
+	w      io.Writer
+	length int64
+}
+
+func (bw *binToStrWriter) Write(p []byte) (n int, err error) {
+	var buf bytes.Buffer
+	for _, b := range p {
+		bw.length++
+
+		switch {
+		case b == '\n':
+			_, err = fmt.Fprintf(&buf, `\n`)
+		case b == '\\':
+			_, err = fmt.Fprintf(&buf, `\\`)
+		case b == '"':
+			_, err = fmt.Fprintf(&buf, `\"`)
+		case b == '\t':
+			fallthrough
+		case (b >= 32 && b <= 126):
+			_, err = fmt.Fprintf(&buf, "%c", b)
+		default:
+			_, err = fmt.Fprintf(&buf, "\\x%02x", b)
+		}
+
+		if err != nil {
+			log.Fatalf("failed to write to buffer: %v", err)
+		}
+	}
+
+	if _, err := bw.w.Write(buf.Bytes()); err != nil {
+		log.Fatalf("failed to write buffer to file: %v", err)
+	}
+
+	return buf.Len(), nil
 }

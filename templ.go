@@ -51,7 +51,7 @@ func (m *memReader) Close() error {
 }
 
 type memFile struct {
-	offset  int64
+	offset	int64
 	name    string
 	modTime time.Time
 	path    string

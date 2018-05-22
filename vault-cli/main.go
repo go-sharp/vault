@@ -5,10 +5,11 @@
 
 package main // "github.com/go-sharp/vault/vault-cli"
 import (
+	"compress/zlib"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"log"
-	"os"
+	"strings"
 
 	"github.com/go-sharp/vault"
 	"github.com/go-sharp/vault/vault-cli/output"
@@ -20,26 +21,31 @@ import (
 
 func main() {
 	g := vault.NewGenerator("/Users/sandro/Downloads", "./output",
-		vault.RecursiveOption(false),
-		vault.IncludeFilesOption("NEXUS.*.pdf$", "HandBrake-1.0.7.dmg$"),
+		vault.RecursiveOption(true),
+		vault.IncludeFilesOption("NEXUS.*.pdf$", ".*HandBrake-1.0.7.dmg$"),
 		//vault.ExcludeFilesOption("templ", "/.git/*"),
 	)
 	//g.Run()
 	_ = g
-	l := output.NewDownloadsLoader()
-	f, err := l.Load("/HandBrake-1.0.7.dmg")
+
+	r := strings.NewReader(output.VaultAssetBinDownloads)
+	b, _ := ioutil.ReadAll(r)
+	fmt.Println(len(b))
+	pdf := output.VaultAssetBinDownloads[0:13011479]
+
+	//io.Copy(os.Stdout, strings.NewReader(pdf))
+	bb, _ := ioutil.ReadAll(strings.NewReader(pdf))
+	fmt.Println(len(pdf), len(bb), len(output.VaultAssetBinDownloads), 94490)
+	zr, err := zlib.NewReader(strings.NewReader(pdf))
 	if err != nil {
 		log.Fatalln(err)
 	}
-	fmt.Printf("Name: %v, Size: %v, Path: %v, ModTime: %v\n", f.Name(), f.Size(), f.Path(), f.ModTime())
 
-	nf, err := os.OpenFile("test.dmg", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0755)
-	fmt.Println(err)
-	fmt.Println(io.Copy(nf, f.Read()))
-	nf.Close()
+	pb, err := ioutil.ReadAll(zr)
+	if err != nil {
+		log.Fatalln(err)
+	}
 
-	var s string
-	fmt.Scan(&s)
-	fmt.Println("finished")
+	ioutil.WriteFile("bla.dmg", pb, 0755)
 
 }
