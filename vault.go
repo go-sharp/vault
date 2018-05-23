@@ -69,7 +69,7 @@ func (p patterns) matches(s string) bool {
 	return false
 }
 
-// Generator creates a vault with files in there binary representation.
+// Generator creates a vault with embedded files.
 type Generator struct {
 	config      GeneratorConfig
 	sharedFile  string
@@ -116,7 +116,7 @@ func (g *Generator) createVault(ch <-chan fileItem) {
 	// Write imports
 	fprintf(w, releaseImportTempl)
 	// Write binary data
-	var files = processFiles(strings.Title(g.config.name), w, ch)
+	var files = processFiles(strings.Title(g.config.name), g.config.cmpLvl, w, ch)
 	// Write release file template
 	execTempl(w, ttReleaseFileTempl, map[string]interface{}{
 		"Suffix": strings.Title(g.config.name),
@@ -126,7 +126,7 @@ func (g *Generator) createVault(ch <-chan fileItem) {
 	w.Close()
 }
 
-func processFiles(assetName string, w io.Writer, ch <-chan fileItem) []fileModel {
+func processFiles(assetName string, cmpLvl int, w io.Writer, ch <-chan fileItem) []fileModel {
 	var files []fileModel
 	var offset int64
 
@@ -141,7 +141,7 @@ func processFiles(assetName string, w io.Writer, ch <-chan fileItem) []fileModel
 
 		// create a binary to string literal writer
 		sw := &binToStrWriter{w: w}
-		zw, err := zlib.NewWriterLevel(sw, zlib.BestCompression)
+		zw, err := zlib.NewWriterLevel(sw, cmpLvl)
 		if err != nil {
 			log.Fatalf("failed to create zlib writer: %v\n", err)
 		}
@@ -195,10 +195,11 @@ func walkSrcDirectory(cfg GeneratorConfig) <-chan fileItem {
 			}
 
 			// Skip any directory if recursive is set to false (default)
-			if !cfg.recursiv && fi.IsDir() {
-				log.Printf("skipping directory '%v'...\n", path)
-				return filepath.SkipDir
-			} else if fi.IsDir() {
+			if fi.IsDir() {
+				if !cfg.recursiv {
+					log.Printf("skipping directory '%v'...\n", path)
+					return filepath.SkipDir
+				}
 				return nil
 			}
 
@@ -216,9 +217,7 @@ func walkSrcDirectory(cfg GeneratorConfig) <-chan fileItem {
 				return nil
 			}
 
-			if !fi.IsDir() {
-				ch <- fileItem{path: vaultPath, fi: fi, fullpath: path}
-			}
+			ch <- fileItem{path: vaultPath, fi: fi, fullpath: path}
 			return nil
 		})
 		if err != nil {
@@ -268,6 +267,7 @@ type GeneratorConfig struct {
 	excl     patterns
 	incl     patterns
 	recursiv bool
+	cmpLvl   int
 }
 
 // GeneratorOption configures the vault generator.
@@ -275,7 +275,7 @@ type GeneratorOption func(g *GeneratorConfig)
 
 // NewGenerator creates a new generator instance with the given options.
 func NewGenerator(src, dest string, options ...GeneratorOption) Generator {
-	cfg := GeneratorConfig{src: src, dest: dest}
+	cfg := GeneratorConfig{src: src, dest: dest, cmpLvl: zlib.BestCompression}
 	for i := range options {
 		options[i](&cfg)
 	}
@@ -315,6 +315,18 @@ func lastPath(p string) string {
 	return p[idx+1:]
 }
 
+// CompressOption if set to true all files will be compressed,
+// otherwise no compression is used.
+func CompressOption(compress bool) GeneratorOption {
+	return func(c *GeneratorConfig) {
+		if compress {
+			c.cmpLvl = zlib.BestCompression
+		} else {
+			c.cmpLvl = zlib.NoCompression
+		}
+	}
+}
+
 // PackageNameOption sets the package name of the generated vault files.
 // If not set, the generator tries to deduce the correct package name.
 func PackageNameOption(name string) GeneratorOption {
@@ -325,7 +337,7 @@ func PackageNameOption(name string) GeneratorOption {
 
 // ExcludeFilesOption sets the files to exclude in the generation process.
 // Only relative paths will be checked, so pattern must not include the fullpath.
-// Pattern matching follows the rules of filepath.Match (see https://golang.org/pkg/path/filepath/#Match).
+// Pattern matching follows the rules of regexp.Match (see https://golang.org/pkg/regexp/#Match).
 func ExcludeFilesOption(name ...string) GeneratorOption {
 	return func(c *GeneratorConfig) {
 		c.excl = append(c.excl, name...)
@@ -335,7 +347,7 @@ func ExcludeFilesOption(name ...string) GeneratorOption {
 // IncludeFilesOption sets the files to include in the generation process.
 // Only specified files and files not matching any exclusion pattern will be included in the generation process.
 // Only relative paths will be checked, so pattern must not include the fullpath.
-// Pattern matching follows the rules of filepath.Match (see https://golang.org/pkg/path/filepath/#Match).
+// Pattern matching follows the rules of regexp.Match (see https://golang.org/pkg/regexp/#Match).
 func IncludeFilesOption(name ...string) GeneratorOption {
 	return func(c *GeneratorConfig) {
 		c.incl = append(c.incl, name...)
@@ -343,7 +355,7 @@ func IncludeFilesOption(name ...string) GeneratorOption {
 }
 
 // RecursiveOption sets the recursive mode for the generation process.
-// If true the generator walks recurively down the folder hierarchy.
+// If true the generator walks recursively down the folder hierarchy.
 func RecursiveOption(recursive bool) GeneratorOption {
 	return func(c *GeneratorConfig) {
 		c.recursiv = recursive

@@ -5,13 +5,7 @@
 
 package main // "github.com/go-sharp/vault/vault-cli"
 import (
-	"fmt"
-	"io/ioutil"
-	"log"
-	"os"
-
 	"github.com/go-sharp/vault"
-	"github.com/go-sharp/vault/vault-cli/output"
 )
 
 // "io/ioutil"
@@ -20,28 +14,32 @@ import (
 
 func main() {
 	g := vault.NewGenerator("../../../../../../../Downloads/test", "./output",
-		vault.RecursiveOption(true),
+		vault.RecursiveOption(false),
+		vault.CompressOption(false),
 		//vault.RelativePathOption("./etc"),
 		//vault.ResourceNameOption("cool"),
 		//vault.PackageNameOption("myPack"),
 		//vault.IncludeFilesOption("NEXUS.*.pdf$", ".*HandBrake-1.0.7.dmg$"),
-		//vault.ExcludeFilesOption("templ", "/.git/*"),
+		vault.ExcludeFilesOption(".*.cc$"),
 	)
-	//g.Run()
+	g.Run()
 	_ = g
 
-	loader := output.NewTestLoader()
+	/*
+		loader := output.NewTestLoader()
 
-	f, err := loader.Load("/murmur3collisions/murmurhash3.h")
-	if err != nil {
-		log.Fatalln(err)
-	}
+		f, err := loader.Load("BT-K Feedback Aufgabe 5.1 MFR - Samuel Weidmann.docx")
+		if err != nil {
+			log.Fatalln(err)
+		}
 
-	b, err := ioutil.ReadAll(f)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	fmt.Fprintln(os.Stdout, string(b))
+		_, err = ioutil.ReadAll(f)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		fmt.Fprintln(os.Stdout, f.Name(), f.ModTime(), f.Path(), f.Size())
+	*/
+	//ioutil.WriteFile("bla.docx", b, 0755)
 
 	// r := strings.NewReader(output.VaultAssetBinDownloads)
 	// b, _ := ioutil.ReadAll(r)

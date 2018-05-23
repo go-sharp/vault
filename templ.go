@@ -83,6 +83,10 @@ func (m memFile) ModTime() time.Time {
 }
 
 func (m memFile) Path() string {
+	if m.path == "" {
+		return "/"
+	}
+
 	return m.path
 }
 
@@ -91,6 +95,10 @@ type loader struct {
 }
 
 func (l loader) Load(name string) (File, error) {
+	if !strings.HasPrefix(name, "/") {
+		name = "/" + name
+	}
+
 	if v, ok := l.fm[name]; ok {
 		r, err := zlib.NewReader(strings.NewReader(vaultAssetBin{{.Suffix}}[v.offset : v.offset+v.length]))
 		if err != nil {
@@ -142,7 +150,7 @@ func (m memFile) Size() int64 {
 }
 
 func (m memFile) Name() string {
-	return m.f.Name()
+	return m.stat.Name()
 }
 
 func (m memFile) ModTime() time.Time {
@@ -166,6 +174,10 @@ type debugLoader struct {
 }
 
 func (d debugLoader) Load(name string) (File, error) {
+	if !strings.HasPrefix(name, "/") {
+		name = "/" + name
+	}
+
 	f, err := os.Open(getFullPath(d.base, name))
 	if err != nil {
 		return nil, err
@@ -176,7 +188,7 @@ func (d debugLoader) Load(name string) (File, error) {
 		return nil, err
 	}
 
-	return &memFile{base: d.base, path: name, f: f, stat: stat}, nil
+	return &memFile{base: d.base, path: strings.TrimRight(name, stat.Name()), f: f, stat: stat}, nil
 }
 
 func getFullPath(b, p string) string {
