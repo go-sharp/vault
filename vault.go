@@ -30,6 +30,18 @@ const (
 
 var ttRepo *template.Template
 
+func execTempl(w io.Writer, name string, data interface{}) {
+	if err := ttRepo.ExecuteTemplate(w, name, data); err != nil {
+		log.Fatalf("failed to execute templ '%v': %v\n", name, err)
+	}
+}
+
+func fprintf(w io.Writer, format string, a ...interface{}) {
+	if _, err := fmt.Fprintf(w, format, a...); err != nil {
+		log.Fatalln("failed to write: ", err)
+	}
+}
+
 func init() {
 	ttRepo = template.Must(template.New(ttDebugFileTempl).Parse(debugFileTemp))
 	ttRepo = template.Must(ttRepo.New(ttSharedTypesTempl).Parse(sharedTypesTempl))
@@ -45,7 +57,7 @@ func (p patterns) matches(s string) bool {
 	for _, pat := range p {
 		ok, err = regexp.MatchString(pat, s)
 		if err != nil {
-			log.Println(err)
+			log.Println("ERROR: ", err)
 			continue
 		}
 
@@ -74,21 +86,20 @@ func (g *Generator) Run() {
 
 	// Create shared and debug files
 	g.createStaticFile(g.sharedFile,
-		func(buf *bytes.Buffer) { ttRepo.ExecuteTemplate(buf, ttFileHeaderTempl, g.config.pkgName) },
-		func(buf *bytes.Buffer) { ttRepo.ExecuteTemplate(buf, ttSharedTypesTempl, nil) })
+		func(buf *bytes.Buffer) { execTempl(buf, ttFileHeaderTempl, g.config.pkgName) },
+		func(buf *bytes.Buffer) { execTempl(buf, ttSharedTypesTempl, nil) })
 
-	basePath := getBasePath(g.config)
 	g.createStaticFile(g.debugFile,
-		func(buf *bytes.Buffer) { fmt.Fprintf(buf, "// +build debug\n\n") },
-		func(buf *bytes.Buffer) { ttRepo.ExecuteTemplate(buf, ttFileHeaderTempl, g.config.pkgName) },
+		func(buf *bytes.Buffer) { fprintf(buf, "// +build debug\n\n") },
+		func(buf *bytes.Buffer) { execTempl(buf, ttFileHeaderTempl, g.config.pkgName) },
 		func(buf *bytes.Buffer) {
-			ttRepo.ExecuteTemplate(buf, ttDebugFileTempl, map[string]string{
+			execTempl(buf, ttDebugFileTempl, map[string]string{
 				"Suffix": strings.Title(g.config.name),
-				"Base":   basePath,
+				"Base":   getBasePath(g.config),
 			})
 		})
 
-	g.createVault(walkSrcDirectory(basePath, g.config))
+	g.createVault(walkSrcDirectory(g.config))
 }
 
 func (g *Generator) createVault(ch <-chan fileItem) {
@@ -99,13 +110,15 @@ func (g *Generator) createVault(ch <-chan fileItem) {
 	w := &writer{f: file}
 
 	// Write build tags
-	fmt.Fprintf(w, "// +build !debug\n\n")
+	fprintf(w, "// +build !debug\n\n")
 	// Execute header template
-	ttRepo.ExecuteTemplate(w, ttFileHeaderTempl, g.config.pkgName)
+	execTempl(w, ttFileHeaderTempl, g.config.pkgName)
+	// Write imports
+	fprintf(w, releaseImportTempl)
 	// Write binary data
 	var files = processFiles(strings.Title(g.config.name), w, ch)
 	// Write release file template
-	ttRepo.ExecuteTemplate(w, ttReleaseFileTempl, map[string]interface{}{
+	execTempl(w, ttReleaseFileTempl, map[string]interface{}{
 		"Suffix": strings.Title(g.config.name),
 		"Files":  files,
 	})
@@ -117,7 +130,7 @@ func processFiles(assetName string, w io.Writer, ch <-chan fileItem) []fileModel
 	var files []fileModel
 	var offset int64
 
-	fmt.Fprintf(w, "\nvar vaultAssetBin%v = \"", assetName)
+	fprintf(w, "\nvar vaultAssetBin%v = \"", assetName)
 
 	for f := range ch {
 		log.Printf("processing file '%v'...\n", f.fullpath)
@@ -158,7 +171,7 @@ func processFiles(assetName string, w io.Writer, ch <-chan fileItem) []fileModel
 		offset += sw.length
 	}
 
-	fmt.Fprintln(w, "\"")
+	fprintf(w, "\"\n")
 	return files
 }
 
@@ -171,13 +184,13 @@ func getPath(p string) string {
 	return p[:idx]
 }
 
-func walkSrcDirectory(src string, cfg GeneratorConfig) <-chan fileItem {
+func walkSrcDirectory(cfg GeneratorConfig) <-chan fileItem {
 	ch := make(chan fileItem, 10)
 
 	go func() {
-		err := filepath.Walk(src, func(path string, fi os.FileInfo, err error) error {
+		err := filepath.Walk(cfg.src, func(path string, fi os.FileInfo, err error) error {
 			// Do not process the source directory
-			if path == src {
+			if path == cfg.src {
 				return nil
 			}
 
@@ -189,7 +202,7 @@ func walkSrcDirectory(src string, cfg GeneratorConfig) <-chan fileItem {
 				return nil
 			}
 
-			vaultPath := filepath.Clean("/" + filepath.ToSlash(strings.TrimLeft(path, src)))
+			vaultPath := filepath.Clean("/" + filepath.ToSlash(strings.TrimLeft(path, cfg.src)))
 			// If include is set, then only process matching files
 			var skip bool
 			if len(cfg.incl) > 0 {
@@ -209,7 +222,7 @@ func walkSrcDirectory(src string, cfg GeneratorConfig) <-chan fileItem {
 			return nil
 		})
 		if err != nil {
-			log.Fatalf("failed to walk source directory '%v': %v", src, err)
+			log.Fatalf("failed to walk source directory '%v': %v", cfg.src, err)
 		}
 		close(ch)
 	}()
@@ -403,21 +416,17 @@ func (bw *binToStrWriter) Write(p []byte) (n int, err error) {
 
 		switch {
 		case b == '\n':
-			_, err = fmt.Fprintf(&buf, `\n`)
+			fprintf(&buf, `\n`)
 		case b == '\\':
-			_, err = fmt.Fprintf(&buf, `\\`)
+			fprintf(&buf, `\\`)
 		case b == '"':
-			_, err = fmt.Fprintf(&buf, `\"`)
+			fprintf(&buf, `\"`)
 		case b == '\t':
 			fallthrough
 		case (b >= 32 && b <= 126):
-			_, err = fmt.Fprintf(&buf, "%c", b)
+			fprintf(&buf, "%c", b)
 		default:
-			_, err = fmt.Fprintf(&buf, "\\x%02x", b)
-		}
-
-		if err != nil {
-			log.Fatalf("failed to write to buffer: %v", err)
+			fprintf(&buf, "\\x%02x", b)
 		}
 	}
 

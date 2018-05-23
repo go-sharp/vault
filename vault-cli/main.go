@@ -5,11 +5,10 @@
 
 package main // "github.com/go-sharp/vault/vault-cli"
 import (
-	"compress/zlib"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"strings"
+	"os"
 
 	"github.com/go-sharp/vault"
 	"github.com/go-sharp/vault/vault-cli/output"
@@ -20,32 +19,48 @@ import (
 // "github.com/go-sharp/vault"
 
 func main() {
-	g := vault.NewGenerator("/Users/sandro/Downloads", "./output",
+	g := vault.NewGenerator("../../../../../../../Downloads/test", "./output",
 		vault.RecursiveOption(true),
-		vault.IncludeFilesOption("NEXUS.*.pdf$", ".*HandBrake-1.0.7.dmg$"),
+		//vault.RelativePathOption("./etc"),
+		//vault.ResourceNameOption("cool"),
+		//vault.PackageNameOption("myPack"),
+		//vault.IncludeFilesOption("NEXUS.*.pdf$", ".*HandBrake-1.0.7.dmg$"),
 		//vault.ExcludeFilesOption("templ", "/.git/*"),
 	)
 	//g.Run()
 	_ = g
 
-	r := strings.NewReader(output.VaultAssetBinDownloads)
-	b, _ := ioutil.ReadAll(r)
-	fmt.Println(len(b))
-	pdf := output.VaultAssetBinDownloads[0:13011479]
+	loader := output.NewTestLoader()
 
-	//io.Copy(os.Stdout, strings.NewReader(pdf))
-	bb, _ := ioutil.ReadAll(strings.NewReader(pdf))
-	fmt.Println(len(pdf), len(bb), len(output.VaultAssetBinDownloads), 94490)
-	zr, err := zlib.NewReader(strings.NewReader(pdf))
+	f, err := loader.Load("/murmur3collisions/murmurhash3.h")
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	pb, err := ioutil.ReadAll(zr)
+	b, err := ioutil.ReadAll(f)
 	if err != nil {
 		log.Fatalln(err)
 	}
+	fmt.Fprintln(os.Stdout, string(b))
 
-	ioutil.WriteFile("bla.dmg", pb, 0755)
+	// r := strings.NewReader(output.VaultAssetBinDownloads)
+	// b, _ := ioutil.ReadAll(r)
+	// fmt.Println(len(b))
+	// pdf := output.VaultAssetBinDownloads[0:13011479]
+
+	// //io.Copy(os.Stdout, strings.NewReader(pdf))
+	// bb, _ := ioutil.ReadAll(strings.NewReader(pdf))
+	// fmt.Println(len(pdf), len(bb), len(output.VaultAssetBinDownloads), 94490)
+	// zr, err := zlib.NewReader(strings.NewReader(pdf))
+	// if err != nil {
+	// 	log.Fatalln(err)
+	// }
+
+	// pb, err := ioutil.ReadAll(zr)
+	// if err != nil {
+	// 	log.Fatalln(err)
+	// }
+
+	// ioutil.WriteFile("bla.dmg", pb, 0755)
 
 }
