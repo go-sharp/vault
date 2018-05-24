@@ -15,6 +15,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -43,10 +44,16 @@ func fprintf(w io.Writer, format string, a ...interface{}) {
 }
 
 func init() {
-	ttRepo = template.Must(template.New(ttDebugFileTempl).Parse(debugFileTemp))
+	ttRepo = template.New("Repo").Funcs(template.FuncMap{
+		"join": func(s ...string) string {
+			return path.Clean(strings.Join(s, "/"))
+		},
+	})
+	ttRepo = template.Must(ttRepo.New(ttDebugFileTempl).Parse(debugFileTemp))
 	ttRepo = template.Must(ttRepo.New(ttSharedTypesTempl).Parse(sharedTypesTempl))
 	ttRepo = template.Must(ttRepo.New(ttReleaseFileTempl).Parse(releaseFileTempl))
 	ttRepo = template.Must(ttRepo.New(ttFileHeaderTempl).Parse(fileHeaderTempl))
+
 }
 
 type patterns []string
@@ -159,13 +166,12 @@ func processFiles(assetName string, cmpLvl int, w io.Writer, ch <-chan fileItem)
 		}
 
 		files = append(files, fileModel{
-			Name:     f.fi.Name(),
-			Path:     getPath(f.path),
-			Size:     f.fi.Size(),
-			ModTime:  f.fi.ModTime(),
-			Offset:   offset,
-			Length:   sw.length,
-			fullpath: f.fullpath,
+			Name:    f.fi.Name(),
+			Path:    getPath(f.path),
+			Size:    f.fi.Size(),
+			ModTime: f.fi.ModTime(),
+			Offset:  offset,
+			Length:  sw.length,
 		})
 
 		offset += sw.length
@@ -177,33 +183,34 @@ func processFiles(assetName string, cmpLvl int, w io.Writer, ch <-chan fileItem)
 
 func getPath(p string) string {
 	idx := strings.LastIndex(p, "/")
-	if idx == -1 {
-		return ""
+	if idx <= 0 {
+		return "/"
 	}
 
-	return p[:idx]
+	return path.Clean("/" + p[:idx])
 }
 
 func walkSrcDirectory(cfg GeneratorConfig) <-chan fileItem {
 	ch := make(chan fileItem, 10)
 
 	go func() {
-		err := filepath.Walk(cfg.src, func(path string, fi os.FileInfo, err error) error {
+		err := filepath.Walk(cfg.src, func(p string, fi os.FileInfo, err error) error {
+			p = filepath.ToSlash(p)
 			// Do not process the source directory
-			if path == cfg.src {
+			if p == cfg.src {
 				return nil
 			}
 
 			// Skip any directory if recursive is set to false (default)
 			if fi.IsDir() {
 				if !cfg.recursiv {
-					log.Printf("skipping directory '%v'...\n", path)
+					log.Printf("skipping directory '%v'...\n", p)
 					return filepath.SkipDir
 				}
 				return nil
 			}
 
-			vaultPath := filepath.Clean("/" + filepath.ToSlash(strings.TrimLeft(path, cfg.src)))
+			vaultPath := strings.TrimPrefix(p, cfg.src)
 			// If include is set, then only process matching files
 			var skip bool
 			if len(cfg.incl) > 0 {
@@ -217,7 +224,7 @@ func walkSrcDirectory(cfg GeneratorConfig) <-chan fileItem {
 				return nil
 			}
 
-			ch <- fileItem{path: vaultPath, fi: fi, fullpath: path}
+			ch <- fileItem{path: vaultPath, fi: fi, fullpath: p}
 			return nil
 		})
 		if err != nil {
@@ -289,8 +296,8 @@ func NewGenerator(src, dest string, options ...GeneratorOption) Generator {
 }
 
 func cleanSlashedPath(s ...string) string {
-	return filepath.Clean(filepath.ToSlash(
-		strings.Join(s, string(os.PathSeparator))))
+	return filepath.ToSlash(path.Clean(
+		strings.Join(s, "/")))
 }
 
 func initGeneratorConfig(cfg *GeneratorConfig) {
@@ -308,7 +315,7 @@ func initGeneratorConfig(cfg *GeneratorConfig) {
 }
 
 func lastPath(p string) string {
-	idx := strings.LastIndex(p, string(os.PathSeparator))
+	idx := strings.LastIndex(p, "/")
 	if idx == -1 {
 		return ""
 	}
@@ -380,17 +387,16 @@ func RelativePathOption(path string) GeneratorOption {
 
 func getBasePath(cfg GeneratorConfig) string {
 	if cfg.relPath == "" {
-		return filepath.Clean(filepath.ToSlash(cfg.src))
+		return path.Clean(filepath.ToSlash(cfg.src))
 	}
 
-	return filepath.Clean(filepath.ToSlash(cfg.relPath))
+	return path.Clean(filepath.ToSlash(cfg.relPath))
 }
 
 type fileModel struct {
 	Name, Path           string
 	Size, Offset, Length int64
 	ModTime              time.Time
-	fullpath             string
 }
 
 type fileItem struct {

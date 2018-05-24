@@ -115,7 +115,7 @@ func New{{.Suffix}}Loader() AssetLoader {
 	loader := &loader{
 		fm: map[string]memFile{
 		{{- range  $el := .Files }}
-			"{{$el.Path}}/{{$el.Name}}": memFile{offset: {{$el.Offset}},
+			"{{join $el.Path $el.Name}}": memFile{offset: {{$el.Offset}},
 				name: "{{$el.Name}}",
 				modTime: time.Unix({{$el.ModTime.Unix}}, 0),
 				path: "{{$el.Path}}",
@@ -135,7 +135,8 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"time"
+    "strings"
+    "time"
 )
 
 type memFile struct {
@@ -188,7 +189,7 @@ func (d debugLoader) Load(name string) (File, error) {
 		return nil, err
 	}
 
-	return &memFile{base: d.base, path: strings.TrimRight(name, stat.Name()), f: f, stat: stat}, nil
+	return &memFile{base: d.base, path: path.Clean(strings.TrimSuffix(name, stat.Name())), f: f, stat: stat}, nil
 }
 
 func getFullPath(b, p string) string {
