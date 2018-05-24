@@ -5,60 +5,63 @@
 
 package main // "github.com/go-sharp/vault/vault-cli"
 import (
+	"flag"
+	"fmt"
+	"os"
+	"strings"
+
 	"github.com/go-sharp/vault"
 )
 
-// "io/ioutil"
+type arrayFlag []string
 
-// "github.com/go-sharp/vault"
+func (a *arrayFlag) String() string {
+	return strings.Join(*a, ",")
+}
+
+func (a *arrayFlag) Set(s string) error {
+	*a = append(*a, s)
+	return nil
+}
 
 func main() {
-	g := vault.NewGenerator("../../../../../../../Downloads/test", "./output",
-		vault.RecursiveOption(false),
-		vault.CompressOption(false),
-		//vault.RelativePathOption("./etc"),
-		//vault.ResourceNameOption("cool"),
-		//vault.PackageNameOption("myPack"),
-		//vault.IncludeFilesOption("NEXUS.*.pdf$", ".*HandBrake-1.0.7.dmg$"),
-		vault.ExcludeFilesOption(".*.cc$"),
-	)
-	g.Run()
-	_ = g
+	// Flag declarations
+	var relpath, name, pkgName string
+	var subdirs, nocomp bool
+	var incl, excl arrayFlag
 
-	/*
-		loader := output.NewTestLoader()
+	flag.StringVar(&relpath, "rp", "", "Set relative path from the executing binary "+
+		"to the source directory (for debug use only)")
+	flag.StringVar(&name, "n", "", "Set the name of the embedded resources (default: source folder name)")
+	flag.StringVar(&pkgName, "p", "", "Set the package name for the generated files (default: destination folder name)")
+	flag.BoolVar(&subdirs, "s", false, "Include files in subdirectories")
+	flag.BoolVar(&nocomp, "no-comp", false, "Do not compress files")
+	flag.Var(&incl, "i", "Set files to include into the generated resource file (a list with regexp)")
+	flag.Var(&excl, "e", "Set files to exclude from the generated resource file (a list with regexp)")
 
-		f, err := loader.Load("BT-K Feedback Aufgabe 5.1 MFR - Samuel Weidmann.docx")
-		if err != nil {
-			log.Fatalln(err)
-		}
+	flag.Usage = func() {
+		fmt.Println("Usage of vault-cli:")
+		fmt.Println("vault-cli [options] source destination")
+		flag.PrintDefaults()
+	}
 
-		_, err = ioutil.ReadAll(f)
-		if err != nil {
-			log.Fatalln(err)
-		}
-		fmt.Fprintln(os.Stdout, f.Name(), f.ModTime(), f.Path(), f.Size())
-	*/
-	//ioutil.WriteFile("bla.docx", b, 0755)
+	flag.Parse()
+	src := flag.Arg(0)
+	dst := flag.Arg(1)
 
-	// r := strings.NewReader(output.VaultAssetBinDownloads)
-	// b, _ := ioutil.ReadAll(r)
-	// fmt.Println(len(b))
-	// pdf := output.VaultAssetBinDownloads[0:13011479]
+	if src == "" || dst == "" {
+		flag.Usage()
+		os.Exit(2)
+	}
 
-	// //io.Copy(os.Stdout, strings.NewReader(pdf))
-	// bb, _ := ioutil.ReadAll(strings.NewReader(pdf))
-	// fmt.Println(len(pdf), len(bb), len(output.VaultAssetBinDownloads), 94490)
-	// zr, err := zlib.NewReader(strings.NewReader(pdf))
-	// if err != nil {
-	// 	log.Fatalln(err)
-	// }
+	generator := vault.NewGenerator(src, dst,
+		vault.RelativePathOption(relpath),
+		vault.PackageNameOption(pkgName),
+		vault.ResourceNameOption(name),
+		vault.WithSubdirsOption(subdirs),
+		vault.CompressOption(nocomp),
+		vault.IncludeFilesOption(incl...),
+		vault.ExcludeFilesOption(excl...))
 
-	// pb, err := ioutil.ReadAll(zr)
-	// if err != nil {
-	// 	log.Fatalln(err)
-	// }
-
-	// ioutil.WriteFile("bla.dmg", pb, 0755)
-
+	generator.Run()
 }

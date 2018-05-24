@@ -203,7 +203,7 @@ func walkSrcDirectory(cfg GeneratorConfig) <-chan fileItem {
 
 			// Skip any directory if recursive is set to false (default)
 			if fi.IsDir() {
-				if !cfg.recursiv {
+				if !cfg.withSubdirs {
 					log.Printf("skipping directory '%v'...\n", p)
 					return filepath.SkipDir
 				}
@@ -266,15 +266,15 @@ func (g *Generator) createStaticFile(fi string, fns ...func(b *bytes.Buffer)) {
 
 // GeneratorConfig configures the vault generator.
 type GeneratorConfig struct {
-	src      string
-	dest     string
-	relPath  string
-	name     string
-	pkgName  string
-	excl     patterns
-	incl     patterns
-	recursiv bool
-	cmpLvl   int
+	src         string
+	dest        string
+	relPath     string
+	name        string
+	pkgName     string
+	excl        patterns
+	incl        patterns
+	withSubdirs bool
+	cmpLvl      int
 }
 
 // GeneratorOption configures the vault generator.
@@ -361,11 +361,11 @@ func IncludeFilesOption(name ...string) GeneratorOption {
 	}
 }
 
-// RecursiveOption sets the recursive mode for the generation process.
-// If true the generator walks recursively down the folder hierarchy.
-func RecursiveOption(recursive bool) GeneratorOption {
+// WithSubdirsOption if set to true, the generator will walk down
+// the folder tree with the source directory as root.
+func WithSubdirsOption(withSubdirs bool) GeneratorOption {
 	return func(c *GeneratorConfig) {
-		c.recursiv = recursive
+		c.withSubdirs = withSubdirs
 	}
 }
 

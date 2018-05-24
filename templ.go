@@ -15,12 +15,6 @@ import (
 // ErrNotFound is returned if the requested file was not found.
 var ErrNotFound = errors.New("file not found")
 
-// ReadSeekCloser interface
-type ReadSeekCloser interface {
-	io.ReadSeeker
-	io.Closer
-}
-
 // File is the vault abstraction of a file.
 type File interface {
 	io.ReadCloser
