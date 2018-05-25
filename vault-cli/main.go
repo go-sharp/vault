@@ -40,6 +40,7 @@ func main() {
 	flag.Var(&excl, "e", "Set files to exclude from the generated resource file (a list with regexp)")
 
 	flag.Usage = func() {
+		fmt.Printf("vault-cli V%v © The Vault Authors\n\n", vault.Version)
 		fmt.Println("Usage of vault-cli:")
 		fmt.Println("vault-cli [options] source destination")
 		flag.PrintDefaults()

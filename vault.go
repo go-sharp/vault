@@ -23,6 +23,8 @@ import (
 )
 
 const (
+	// Version is the current vault version.
+	Version            = "1.0.1"
 	ttSharedTypesTempl = "sharedTypes"
 	ttDebugFileTempl   = "debugFile"
 	ttReleaseFileTempl = "releaseFile"
@@ -93,14 +95,14 @@ func (g *Generator) Run() {
 
 	// Create shared and debug files
 	g.createStaticFile(g.sharedFile,
-		func(buf *bytes.Buffer) { execTempl(buf, ttFileHeaderTempl, g.config.pkgName) },
-		func(buf *bytes.Buffer) { execTempl(buf, ttSharedTypesTempl, nil) })
+		func(w io.Writer) { execTempl(w, ttFileHeaderTempl, g.config.pkgName) },
+		func(w io.Writer) { execTempl(w, ttSharedTypesTempl, nil) })
 
 	g.createStaticFile(g.debugFile,
-		func(buf *bytes.Buffer) { fprintf(buf, "// +build debug\n\n") },
-		func(buf *bytes.Buffer) { execTempl(buf, ttFileHeaderTempl, g.config.pkgName) },
-		func(buf *bytes.Buffer) {
-			execTempl(buf, ttDebugFileTempl, map[string]string{
+		func(w io.Writer) { fprintf(w, "// +build debug\n\n") },
+		func(w io.Writer) { execTempl(w, ttFileHeaderTempl, g.config.pkgName) },
+		func(w io.Writer) {
+			execTempl(w, ttDebugFileTempl, map[string]string{
 				"Suffix": strings.Title(g.config.name),
 				"Base":   getBasePath(g.config),
 			})
@@ -114,23 +116,24 @@ func (g *Generator) createVault(ch <-chan fileItem) {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	w := &writer{f: file}
 
 	// Write build tags
-	fprintf(w, "// +build !debug\n\n")
+	fprintf(file, "// +build !debug\n\n")
 	// Execute header template
-	execTempl(w, ttFileHeaderTempl, g.config.pkgName)
+	execTempl(file, ttFileHeaderTempl, g.config.pkgName)
 	// Write imports
-	fprintf(w, releaseImportTempl)
+	fprintf(file, releaseImportTempl)
 	// Write binary data
-	var files = processFiles(strings.Title(g.config.name), g.config.cmpLvl, w, ch)
+	var files = processFiles(strings.Title(g.config.name), g.config.cmpLvl, file, ch)
 	// Write release file template
-	execTempl(w, ttReleaseFileTempl, map[string]interface{}{
+	execTempl(file, ttReleaseFileTempl, map[string]interface{}{
 		"Suffix": strings.Title(g.config.name),
 		"Files":  files,
 	})
 
-	w.Close()
+	if err := file.Close(); err != nil {
+		log.Fatalf("failed to close file: %v", err)
+	}
 }
 
 func processFiles(assetName string, cmpLvl int, w io.Writer, ch <-chan fileItem) []fileModel {
@@ -236,7 +239,7 @@ func walkSrcDirectory(cfg GeneratorConfig) <-chan fileItem {
 	return ch
 }
 
-func (g *Generator) createStaticFile(fi string, fns ...func(b *bytes.Buffer)) {
+func (g *Generator) createStaticFile(fi string, fns ...func(w io.Writer)) {
 	log.Printf("creating file '%v'...", fi)
 
 	var buf bytes.Buffer
@@ -315,6 +318,7 @@ func initGeneratorConfig(cfg *GeneratorConfig) {
 }
 
 func lastPath(p string) string {
+	p = filepath.ToSlash(p)
 	idx := strings.LastIndex(p, "/")
 	if idx == -1 {
 		return ""
@@ -402,24 +406,6 @@ type fileModel struct {
 type fileItem struct {
 	path, fullpath string
 	fi             os.FileInfo
-}
-
-type writer struct {
-	f *os.File
-}
-
-func (w *writer) Write(b []byte) (n int, err error) {
-	n, err = w.f.Write(b)
-	if err != nil {
-		log.Fatalf("failed to write to file: %v", err)
-	}
-	return n, err
-}
-
-func (w *writer) Close() {
-	if err := w.f.Close(); err != nil {
-		log.Fatalf("failed to close file: %v", err)
-	}
 }
 
 type binToStrWriter struct {
