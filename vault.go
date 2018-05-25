@@ -198,9 +198,11 @@ func walkSrcDirectory(cfg GeneratorConfig) <-chan fileItem {
 
 	go func() {
 		err := filepath.Walk(cfg.src, func(p string, fi os.FileInfo, err error) error {
-			p = filepath.ToSlash(p)
+			p = filepath.ToSlash(path.Clean(p))
+			src := filepath.ToSlash(path.Clean(cfg.src))
+
 			// Do not process the source directory
-			if p == cfg.src {
+			if p == src {
 				return nil
 			}
 
@@ -213,7 +215,7 @@ func walkSrcDirectory(cfg GeneratorConfig) <-chan fileItem {
 				return nil
 			}
 
-			vaultPath := strings.TrimPrefix(p, cfg.src)
+			vaultPath := strings.TrimPrefix(p, src)
 			// If include is set, then only process matching files
 			var skip bool
 			if len(cfg.incl) > 0 {
@@ -314,6 +316,15 @@ func initGeneratorConfig(cfg *GeneratorConfig) {
 		if cfg.name = lastPath(cfg.src); cfg.name == "" {
 			cfg.name = cfg.pkgName
 		}
+	}
+
+	// check if identifiers are valid
+	if _, err := format.Source([]byte("package " + cfg.pkgName)); err != nil {
+		log.Fatalf("'%v' is an invalid package name: try to set a valid package name manually", cfg.pkgName)
+	}
+
+	if _, err := format.Source([]byte("var " + cfg.name + " string")); err != nil {
+		log.Fatalf("'%v' is an invalid resource name: try to set a valid resource name manually", cfg.name)
 	}
 }
 
