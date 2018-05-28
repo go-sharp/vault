@@ -24,7 +24,7 @@ import (
 
 const (
 	// Version is the current vault version.
-	Version            = "1.0.2"
+	Version            = "1.0.3"
 	ttSharedTypesTempl = "sharedTypes"
 	ttDebugFileTempl   = "debugFile"
 	ttReleaseFileTempl = "releaseFile"
@@ -207,8 +207,7 @@ func walkSrcDirectory(cfg GeneratorConfig) <-chan fileItem {
 
 	go func() {
 		err := filepath.Walk(cfg.src, func(p string, fi os.FileInfo, err error) error {
-			p = filepath.ToSlash(path.Clean(p))
-
+			p = path.Clean(filepath.ToSlash(p))
 			// Do not process the source directory
 			if p == cfg.src {
 				return nil
@@ -296,8 +295,8 @@ type GeneratorOption func(g *GeneratorConfig)
 // NewGenerator creates a new generator instance with the given options.
 func NewGenerator(src, dest string, options ...GeneratorOption) Generator {
 	cfg := GeneratorConfig{
-		src:    filepath.ToSlash(path.Clean(src)),
-		dest:   filepath.ToSlash(path.Clean(dest)),
+		src:    path.Clean(filepath.ToSlash(src)),
+		dest:   path.Clean(filepath.ToSlash(dest)),
 		cmpLvl: zlib.BestCompression}
 	for i := range options {
 		options[i](&cfg)
@@ -401,6 +400,11 @@ func ResourceNameOption(name string) GeneratorOption {
 // where the generator was invoked.
 func RelativePathOption(p string) GeneratorOption {
 	return func(c *GeneratorConfig) {
+		if p == "" {
+			c.relPath = ""
+			return
+		}
+
 		c.relPath = filepath.ToSlash(path.Clean(p))
 	}
 }
