@@ -24,7 +24,7 @@ import (
 
 const (
 	// Version is the current vault version.
-	Version            = "1.0.1"
+	Version            = "1.0.2"
 	ttSharedTypesTempl = "sharedTypes"
 	ttDebugFileTempl   = "debugFile"
 	ttReleaseFileTempl = "releaseFile"
@@ -89,7 +89,7 @@ type Generator struct {
 // Run starts the vault generation, may panic if an error occurs.
 func (g *Generator) Run() {
 	log.Println("starting vault generation...")
-	if err := os.MkdirAll(g.config.dest, 0755); err != nil {
+	if err := os.MkdirAll(g.config.dest, 0700); err != nil {
 		log.Fatalln("failed to create destination folder: ", err)
 	}
 
@@ -98,13 +98,18 @@ func (g *Generator) Run() {
 		func(w io.Writer) { execTempl(w, ttFileHeaderTempl, g.config.pkgName) },
 		func(w io.Writer) { execTempl(w, ttSharedTypesTempl, nil) })
 
+	basePath := g.config.src
+	if g.config.relPath != "" {
+		basePath = g.config.relPath
+	}
+
 	g.createStaticFile(g.debugFile,
 		func(w io.Writer) { fprintf(w, "// +build debug\n\n") },
 		func(w io.Writer) { execTempl(w, ttFileHeaderTempl, g.config.pkgName) },
 		func(w io.Writer) {
 			execTempl(w, ttDebugFileTempl, map[string]string{
 				"Suffix": strings.Title(g.config.name),
-				"Base":   getBasePath(g.config),
+				"Base":   basePath,
 			})
 		})
 
@@ -112,7 +117,7 @@ func (g *Generator) Run() {
 }
 
 func (g *Generator) createVault(ch <-chan fileItem) {
-	file, err := os.OpenFile(g.releaseFile, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0755)
+	file, err := os.OpenFile(g.releaseFile, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0600)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -163,7 +168,11 @@ func processFiles(assetName string, cmpLvl int, w io.Writer, ch <-chan fileItem)
 		}
 
 		// write and close the zlib writer
-		zw.Write(b)
+		_, err = zw.Write(b)
+		if err != nil {
+			log.Fatalf("failed to write to zlib writer: %v", err)
+		}
+
 		if err = zw.Close(); err != nil {
 			log.Fatalf("failed to close zlib writer: %v\n", err)
 		}
@@ -199,10 +208,9 @@ func walkSrcDirectory(cfg GeneratorConfig) <-chan fileItem {
 	go func() {
 		err := filepath.Walk(cfg.src, func(p string, fi os.FileInfo, err error) error {
 			p = filepath.ToSlash(path.Clean(p))
-			src := filepath.ToSlash(path.Clean(cfg.src))
 
 			// Do not process the source directory
-			if p == src {
+			if p == cfg.src {
 				return nil
 			}
 
@@ -215,7 +223,7 @@ func walkSrcDirectory(cfg GeneratorConfig) <-chan fileItem {
 				return nil
 			}
 
-			vaultPath := strings.TrimPrefix(p, src)
+			vaultPath := strings.TrimPrefix(p, cfg.src)
 			// If include is set, then only process matching files
 			var skip bool
 			if len(cfg.incl) > 0 {
@@ -254,7 +262,7 @@ func (g *Generator) createStaticFile(fi string, fns ...func(w io.Writer)) {
 		log.Fatalf("failed to format file: %v\n%s\n", err, buf.Bytes())
 	}
 
-	sf, err := os.OpenFile(fi, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0755)
+	sf, err := os.OpenFile(fi, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
 		log.Fatalf("failed to create vault file for resource '%v': %v\n", g.config.name, err)
 	}
@@ -287,22 +295,20 @@ type GeneratorOption func(g *GeneratorConfig)
 
 // NewGenerator creates a new generator instance with the given options.
 func NewGenerator(src, dest string, options ...GeneratorOption) Generator {
-	cfg := GeneratorConfig{src: src, dest: dest, cmpLvl: zlib.BestCompression}
+	cfg := GeneratorConfig{
+		src:    filepath.ToSlash(path.Clean(src)),
+		dest:   filepath.ToSlash(path.Clean(dest)),
+		cmpLvl: zlib.BestCompression}
 	for i := range options {
 		options[i](&cfg)
 	}
 	initGeneratorConfig(&cfg)
 	g := Generator{config: cfg}
 
-	g.sharedFile = cleanSlashedPath(dest, fmt.Sprintf("shared_%v_vault.go", cfg.name))
-	g.debugFile = cleanSlashedPath(dest, fmt.Sprintf("debug_%v_vault.go", cfg.name))
-	g.releaseFile = cleanSlashedPath(dest, fmt.Sprintf("release_%v_vault.go", cfg.name))
+	g.sharedFile = fmt.Sprintf("%v/shared_%v_vault.go", cfg.dest, cfg.name)
+	g.debugFile = fmt.Sprintf("%v/debug_%v_vault.go", cfg.dest, cfg.name)
+	g.releaseFile = fmt.Sprintf("%v/release_%v_vault.go", cfg.dest, cfg.name)
 	return g
-}
-
-func cleanSlashedPath(s ...string) string {
-	return filepath.ToSlash(path.Clean(
-		strings.Join(s, "/")))
 }
 
 func initGeneratorConfig(cfg *GeneratorConfig) {
@@ -329,10 +335,9 @@ func initGeneratorConfig(cfg *GeneratorConfig) {
 }
 
 func lastPath(p string) string {
-	p = filepath.ToSlash(p)
 	idx := strings.LastIndex(p, "/")
 	if idx == -1 {
-		return ""
+		return p
 	}
 	return p[idx+1:]
 }
@@ -394,18 +399,10 @@ func ResourceNameOption(name string) GeneratorOption {
 // RelativePathOption sets the relative path for the debug asset loader.
 // If not specified the generator uses the relative path from the directory
 // where the generator was invoked.
-func RelativePathOption(path string) GeneratorOption {
+func RelativePathOption(p string) GeneratorOption {
 	return func(c *GeneratorConfig) {
-		c.relPath = path
+		c.relPath = filepath.ToSlash(path.Clean(p))
 	}
-}
-
-func getBasePath(cfg GeneratorConfig) string {
-	if cfg.relPath == "" {
-		return path.Clean(filepath.ToSlash(cfg.src))
-	}
-
-	return path.Clean(filepath.ToSlash(cfg.relPath))
 }
 
 type fileModel struct {
@@ -446,7 +443,7 @@ func (bw *binToStrWriter) Write(p []byte) (n int, err error) {
 	}
 
 	if _, err := bw.w.Write(buf.Bytes()); err != nil {
-		log.Fatalf("failed to write buffer to file: %v", err)
+		log.Fatalf("failed to write buffer to writer: %v", err)
 	}
 
 	return buf.Len(), nil
