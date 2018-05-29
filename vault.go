@@ -86,7 +86,7 @@ type Generator struct {
 	releaseFile string
 }
 
-// Run starts the vault generation, may panic if an error occurs.
+// Run starts the vault generation, calls log.Fatal if an error occurs.
 func (g *Generator) Run() {
 	log.Println("starting vault generation...")
 	if err := os.MkdirAll(g.config.dest, 0700); err != nil {
