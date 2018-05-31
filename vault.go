@@ -24,7 +24,7 @@ import (
 
 const (
 	// Version is the current vault version.
-	Version            = "1.0.3"
+	Version            = "1.0.4"
 	ttSharedTypesTempl = "sharedTypes"
 	ttDebugFileTempl   = "debugFile"
 	ttReleaseFileTempl = "releaseFile"
