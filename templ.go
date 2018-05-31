@@ -28,7 +28,7 @@ type File interface {
 	Path() string
 }
 
-// AssetLoader implements a function to load a asset from the vault
+// AssetLoader implements a function to load an asset from the vault
 type AssetLoader interface {
 	// Load loads a file from the vault.
 	Load(name string) (File, error)

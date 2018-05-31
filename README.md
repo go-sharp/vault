@@ -114,10 +114,17 @@ import (
 )
 
 func main() {
+    // Create a loader (default: New{source folder name}Loader() -> can be change with ResourceNameOption)
     loader := res.NewDistLoader()
-    data, err := loader.Load("/bg.jpg")
+    f, err := loader.Load("/bg.jpg")
     if err != nil {
         log.Fatalln(err)
+    }
+
+    // Read content
+    data, err := ioutil.ReadAll(f)
+    if err != nil {
+       log.Fatalln(err)
     }
 
     // Write content to a file
@@ -125,9 +132,15 @@ func main() {
         log.Fatalln(err)
     }
 
-    data, err = loader.Load("/js/app.js")
+    f, err = loader.Load("/js/app.js")
     if err != nil {
         log.Fatalln(err)
+    }
+
+     // Read content
+    data, err = ioutil.ReadAll(f)
+    if err != nil {
+       log.Fatalln(err)
     }
 
     // Write to console
@@ -136,6 +149,33 @@ func main() {
 ```
 
 AssetLoader uses the relative path to the file within the source directory to lookup the file in the vault. The loader uses slashes `/` as path separator on all platforms (macOS, Linux and Windows).
+
+The asset loader implements only one method:
+
+```go
+// AssetLoader implements a function to load an asset from the vault
+type AssetLoader interface {
+	// Load loads a file from the vault.
+	Load(name string) (File, error)
+}
+```
+
+Load returns a file instance with the following interface or an error:
+
+```go
+// File is the vault abstraction of a file.
+type File interface {
+	io.ReadCloser
+	// Size returns the size of the file.
+	Size() int64
+	// Name returns the name of the file.
+	Name() string
+	// ModTime returns the modification time.
+	ModTime() time.Time
+	// Path is the registered path within the vault.
+	Path() string
+}
+```
 
 #### Development Mode
 
