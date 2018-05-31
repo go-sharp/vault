@@ -1,0 +1,21 @@
+body {
+    margin: 0;
+    padding: 0;
+    font-family: sans-serif;
+}
+
+.main-content {
+    padding: 15px;
+}
+
+.main-content input {
+    margin-left: 5px;
+}
+
+.result {
+    padding: 5px 0;
+}
+
+.error {
+    color: red;
+}
