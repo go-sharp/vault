@@ -60,7 +60,7 @@ func main() {
 		vault.PackageNameOption(pkgName),
 		vault.ResourceNameOption(name),
 		vault.WithSubdirsOption(subdirs),
-		vault.CompressOption(nocomp),
+		vault.CompressOption(!nocomp),
 		vault.IncludeFilesOption(incl...),
 		vault.ExcludeFilesOption(excl...))
 
