@@ -121,24 +121,31 @@ func main() {
         log.Fatalln(err)
     }
 
+    // Check for error omitted, but you definitely should check for errors.
+    defer f.Close()
+
     // Read content
     data, err := ioutil.ReadAll(f)
     if err != nil {
        log.Fatalln(err)
     }
 
+
     // Write content to a file
     if err := ioutil.WriteFile("bg.jpg", data, 0755); err != nil {
         log.Fatalln(err)
     }
 
-    f, err = loader.Load("/js/app.js")
+    f2, err := loader.Load("/js/app.js")
     if err != nil {
         log.Fatalln(err)
     }
 
+    // Check for error omitted, but you definitely should check for errors.
+    defer f2.Close()
+
      // Read content
-    data, err = ioutil.ReadAll(f)
+    data, err = ioutil.ReadAll(f2)
     if err != nil {
        log.Fatalln(err)
     }
