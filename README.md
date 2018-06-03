@@ -195,6 +195,10 @@ $~/workspace/src/webapp/dist> vault-cli -s -rp "./dist" ./ ../res
 $~/workspace/src/webapp> go run -tags debug main.go
 ```
 
+## A simple webapp example
+
+See [Example folder](./example/README.md)
+
 ## License
 
 This software is licensed under the MIT License.

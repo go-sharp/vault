@@ -11,10 +11,13 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/pkg/browser"
+
 	"github.com/go-sharp/vault/example/webapp-backend/res"
 )
 
 func sayHelloHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("calling web api: %v...", r.URL.Path)
 	name := r.FormValue("name")
 	if name == "" {
 		fmt.Fprintf(w, "Hello, anonymous user!")
@@ -25,6 +28,7 @@ func sayHelloHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func timeHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("calling web api: %v...", r.URL.Path)
 	fmt.Fprintf(w, "%v", time.Now().Format("Mon Jan 2 15:04:05"))
 }
 
@@ -57,5 +61,6 @@ func main() {
 	})
 
 	log.Println("webapp started, listening on port :8080...")
+	browser.OpenURL("http://localhost:8080")
 	http.ListenAndServe(":8080", nil)
 }
