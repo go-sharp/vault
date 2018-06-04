@@ -114,7 +114,7 @@ import (
 )
 
 func main() {
-    // Create a loader (default: New{source folder name}Loader() -> can be change with ResourceNameOption)
+    // Create a loader (default: New{source folder name}Loader() -> can be changed with ResourceNameOption)
     loader := res.NewDistLoader()
     f, err := loader.Load("/bg.jpg")
     if err != nil {
