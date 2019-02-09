@@ -8,6 +8,7 @@ package res
 
 import (
 	"compress/zlib"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -15,6 +16,8 @@ import (
 )
 
 var vaultAssetBinReact = ""
+
+// Remove next line
 var mf File = &memFile{}
 
 type fileInfo memFile
@@ -43,8 +46,13 @@ func (f fileInfo) Sys() interface{} {
 	return nil
 }
 
+type assetReader interface {
+	io.ReadCloser
+	zlib.Resetter
+}
+
 type memFile struct {
-	r       io.ReadCloser
+	r       assetReader
 	rOffset int64
 	offset  int64
 	name    string
@@ -62,13 +70,38 @@ func (m memFile) Readdir(count int) ([]os.FileInfo, error) {
 func (m memFile) Close() error {
 	return m.r.Close()
 }
-func (m memFile) Read(p []byte) (n int, err error) {
-	return m.r.Read(p)
+func (m *memFile) Read(p []byte) (n int, err error) {
+	n, err = m.r.Read(p)
+	m.rOffset += int64(n)
+	return n, err
 }
 
-func (m memFile) Seek(offset int64, whence int) (int64, error) {
-	m.r.
-		panic("not implemented")
+func (m *memFile) Seek(offset int64, whence int) (int64, error) {
+	switch whence {
+	case io.SeekCurrent:
+		offset += m.rOffset
+	case io.SeekStart:
+	case io.SeekEnd:
+		offset += m.length
+	default:
+		return 0, errors.New("Seek: invalid whence")
+
+	}
+
+	if offset < 0 {
+		return m.rOffset, errors.New("Seek: invalid offset")
+	}
+
+	if offset < m.rOffset {
+		if err := m.r.Reset(strings.NewReader(vaultAssetBinReact[m.offset:m.offset+m.length]), nil); err != nil {
+			return m.rOffset, err
+		}
+		m.rOffset = 0
+	}
+
+	buf := make([]byte, offset)
+	_, err := m.Read(buf)
+	return m.rOffset, err
 }
 
 func (m memFile) Stat() (os.FileInfo, error) {
@@ -89,7 +122,7 @@ func (l loader) Load(name string) (File, error) {
 		if err != nil {
 			return nil, err
 		}
-		v.r = r
+		v.r = r.(assetReader)
 		return &v, nil
 	}
 	return nil, ErrNotFound
