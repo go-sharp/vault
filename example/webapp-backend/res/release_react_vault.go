@@ -9,8 +9,10 @@ package res
 import (
 	"compress/zlib"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -19,32 +21,6 @@ var vaultAssetBinReact = ""
 
 // Remove next line
 var mf File = &memFile{}
-
-type fileInfo memFile
-
-func (f fileInfo) Name() string {
-	return f.name
-}
-
-func (f fileInfo) Size() int64 {
-	return f.size
-}
-
-func (f fileInfo) Mode() os.FileMode {
-	return 0444
-}
-
-func (f fileInfo) ModTime() time.Time {
-	return f.modTime
-}
-
-func (f fileInfo) IsDir() bool {
-	return false
-}
-
-func (f fileInfo) Sys() interface{} {
-	return nil
-}
 
 type assetReader interface {
 	io.ReadCloser
@@ -70,7 +46,32 @@ func (m memFile) Readdir(count int) ([]os.FileInfo, error) {
 func (m memFile) Close() error {
 	return m.r.Close()
 }
+
+func (m *memFile) resetReader() error {
+	var r io.ReadCloser
+	var err error
+	if m.r == nil {
+		r, err = zlib.NewReader(strings.NewReader(vaultAssetBinReact[m.offset : m.offset+m.length]))
+	} else {
+		err = m.r.Reset(strings.NewReader(vaultAssetBinReact[m.offset:m.offset+m.length]), nil)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	m.r = r.(assetReader)
+	m.rOffset = 0
+	return nil
+}
+
 func (m *memFile) Read(p []byte) (n int, err error) {
+	if m.r == nil {
+		if err := m.resetReader(); err != nil {
+			return 0, err
+		}
+	}
+
 	n, err = m.r.Read(p)
 	m.rOffset += int64(n)
 	return n, err
@@ -93,10 +94,9 @@ func (m *memFile) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	if offset < m.rOffset {
-		if err := m.r.Reset(strings.NewReader(vaultAssetBinReact[m.offset:m.offset+m.length]), nil); err != nil {
+		if err := m.resetReader(); err != nil {
 			return m.rOffset, err
 		}
-		m.rOffset = 0
 	}
 
 	buf := make([]byte, offset)
@@ -105,11 +105,148 @@ func (m *memFile) Seek(offset int64, whence int) (int64, error) {
 }
 
 func (m memFile) Stat() (os.FileInfo, error) {
-	return fileInfo(m), nil
+	return m, nil
+}
+
+func (m memFile) Name() string {
+	return m.name
+}
+
+func (m memFile) Size() int64 {
+	return m.size
+}
+
+func (m memFile) Mode() os.FileMode {
+	return 0444
+}
+
+func (m memFile) ModTime() time.Time {
+	return m.modTime
+}
+
+func (m memFile) IsDir() bool {
+	return false
+}
+
+func (m memFile) Sys() interface{} {
+	return nil
+}
+
+type memDir struct {
+	dir    string
+	fm     assetMap
+	offset int
+}
+
+func (m memDir) Close() error {
+	return nil
+}
+
+func (m memDir) Read(p []byte) (n int, err error) {
+	return 0, errors.New("Read: invalid operation on directory")
+}
+
+func (m memDir) Seek(offset int64, whence int) (int64, error) {
+	return 0, errors.New("Seek: invalid operation on directory")
+}
+
+func (m memDir) Readdir(count int) ([]os.FileInfo, error) {
+	var files []os.FileInfo
+	var dirs []string
+	contains := func(s string) bool {
+		for i := range dirs {
+			if dirs[i] == s {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, v := range m.fm {
+		if v.path == m.dir {
+			files = append(files, v)
+			continue
+		}
+		if strings.HasPrefix(v.path, m.dir) {
+			path := strings.TrimLeft(v.path, m.dir)
+			path = strings.TrimRightFunc(path, func(rune) bool {
+				// TODO: Remove trailing path segments
+				return false
+			})
+			if !contains(path) {
+				dirs = append(dirs, path)
+				files = append(files, memDir{dir: fmt.Sprintf("%v/%v", m.dir, path), fm: m.fm.filterPath(m.dir)})
+			}
+		}
+	}
+
+	sort.Slice(files, func(i int, j int) bool {
+		first := files[i]
+		second := files[j]
+
+		switch ft := first.(type) {
+		case memDir:
+			st, ok := second.(memDir)
+			if ok {
+				return ft.dir < st.dir
+			}
+			return true
+		case memFile:
+			st, ok := second.(memFile)
+			if ok {
+				return ft.name < st.name
+			}
+			return false
+		default:
+			panic("invalid slice type")
+		}
+	})
+
+	return nil, nil
+}
+
+func (m memDir) Stat() (os.FileInfo, error) {
+	panic("not implemented")
+}
+
+func (m memDir) Name() string {
+	panic("not implemented")
+}
+
+func (m memDir) Size() int64 {
+	panic("not implemented")
+}
+
+func (m memDir) Mode() os.FileMode {
+	panic("not implemented")
+}
+
+func (m memDir) ModTime() time.Time {
+	panic("not implemented")
+}
+
+func (m memDir) IsDir() bool {
+	panic("not implemented")
+}
+
+func (m memDir) Sys() interface{} {
+	panic("not implemented")
+}
+
+type assetMap map[string]memFile
+
+func (a assetMap) filterPath(path string) assetMap {
+	mm := assetMap{}
+	for k, v := range a {
+		if strings.HasPrefix(v.path, path) {
+			mm[k] = v
+		}
+	}
+	return mm
 }
 
 type loader struct {
-	fm map[string]memFile
+	fm assetMap
 }
 
 func (l loader) Load(name string) (File, error) {
@@ -118,11 +255,6 @@ func (l loader) Load(name string) (File, error) {
 	}
 
 	if v, ok := l.fm[name]; ok {
-		r, err := zlib.NewReader(strings.NewReader(vaultAssetBinReact[v.offset : v.offset+v.length]))
-		if err != nil {
-			return nil, err
-		}
-		v.r = r.(assetReader)
 		return &v, nil
 	}
 	return nil, ErrNotFound
@@ -131,7 +263,7 @@ func (l loader) Load(name string) (File, error) {
 // NewReactLoader returns a new AssetLoader for the React resources.
 func NewReactLoader() AssetLoader {
 	loader := &loader{
-		fm: map[string]memFile{
+		fm: assetMap{
 			"/asset-manifest.json": memFile{offset: 0,
 				name:    "asset-manifest.json",
 				modTime: time.Unix(1527796009, 0),
