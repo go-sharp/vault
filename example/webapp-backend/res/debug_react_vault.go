@@ -11,60 +11,18 @@ import (
 	"os"
 	"path"
 	"strings"
-	"time"
 )
-
-type memFile struct {
-	f    *os.File
-	stat os.FileInfo
-	path string
-	base string
-}
-
-func (m memFile) Size() int64 {
-	return m.stat.Size()
-}
-
-func (m memFile) Name() string {
-	return m.stat.Name()
-}
-
-func (m memFile) ModTime() time.Time {
-	return m.stat.ModTime()
-}
-
-func (m memFile) Path() string {
-	return m.path
-}
-
-func (m memFile) Read(p []byte) (n int, err error) {
-	return m.f.Read(p)
-}
-
-func (m memFile) Close() error {
-	return m.f.Close()
-}
 
 type debugLoader struct {
 	base string
 }
 
-func (d debugLoader) Load(name string) (File, error) {
+func (d debugLoader) Open(name string) (File, error) {
 	if !strings.HasPrefix(name, "/") {
 		name = "/" + name
 	}
 
-	f, err := os.Open(getFullPath(d.base, name))
-	if err != nil {
-		return nil, err
-	}
-
-	stat, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	return &memFile{base: d.base, path: path.Clean(strings.TrimSuffix(name, stat.Name())), f: f, stat: stat}, nil
+	return os.Open(getFullPath(d.base, name))
 }
 
 func getFullPath(b, p string) string {

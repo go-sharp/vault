@@ -1,4 +1,4 @@
-//go:generate vault-cli -s -n react ../webapp-frontend/build ./res
+//go:generate vault-cli -s -n react ../webapp-frontend/build ./resv2
 
 package main
 
@@ -13,7 +13,7 @@ import (
 
 	"github.com/pkg/browser"
 
-	"github.com/go-sharp/vault/example/webapp-backend/res"
+	res "github.com/go-sharp/vault/example/webapp-backend/resv2"
 )
 
 func sayHelloHandler(w http.ResponseWriter, r *http.Request) {
@@ -38,6 +38,8 @@ func main() {
 	http.HandleFunc("/api/sayhello", sayHelloHandler)
 	http.HandleFunc("/api/time", timeHandler)
 
+	http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(loader)))
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fp := r.URL.Path
 		if fp == "/" {
@@ -45,7 +47,7 @@ func main() {
 		}
 		log.Printf("requesting: %v...", r.URL.Path)
 
-		f, err := loader.Load(fp)
+		f, err := loader.Open(fp)
 		if err != nil {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -56,7 +58,8 @@ func main() {
 		}
 		defer f.Close()
 
-		w.Header().Set("Content-Type", mime.TypeByExtension(filepath.Ext(f.Name())))
+		fi, _ := f.Stat()
+		w.Header().Set("Content-Type", mime.TypeByExtension(filepath.Ext(fi.Name())))
 		w.Write(data)
 	})
 

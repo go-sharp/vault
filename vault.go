@@ -10,7 +10,6 @@ import (
 	"compress/zlib"
 	"fmt"
 	"go/format"
-	"html/template"
 	"io"
 	"io/ioutil"
 	"log"
@@ -19,12 +18,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"text/template"
 	"time"
 )
 
 const (
 	// Version is the current vault version.
-	Version            = "1.0.4"
+	Version            = "2.0.0"
 	ttSharedTypesTempl = "sharedTypes"
 	ttDebugFileTempl   = "debugFile"
 	ttReleaseFileTempl = "releaseFile"

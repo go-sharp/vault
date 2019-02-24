@@ -45,9 +45,8 @@ func (m memFile) Close() error {
 	return m.r.Close()
 }
 
-func (m *memFile) resetReader() error {
+func (m *memFile) resetReader() (err error) {
 	var r io.ReadCloser
-	var err error
 	if m.r == nil {
 		r, err = zlib.NewReader(strings.NewReader(vaultAssetBinReact[m.offset : m.offset+m.length]))
 	} else {
@@ -204,7 +203,7 @@ type loader struct {
 	fm assetMap
 }
 
-func (l loader) Load(name string) (File, error) {
+func (l loader) Open(name string) (File, error) {
 	if !strings.HasPrefix(name, "/") {
 		name = "/" + name
 	}

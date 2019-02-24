@@ -27,8 +27,8 @@ type File interface {
 
 // AssetLoader implements a function to load an asset from the vault
 type AssetLoader interface {
-	// Load loads a file from the vault.
-	Load(name string) (File, error)
+	// Open loads a file from the vault.
+	Open(name string) (File, error)
 }
 
 type assetMap map[string]memFile
