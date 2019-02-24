@@ -268,19 +268,22 @@ func (l loader) Open(name string) (http.File, error) {
 	if !strings.HasPrefix(name, "/") {
 		name = "/" + name
 	}
-	name = strings.TrimRight(name, "/")
+
+	if len(name) > 1 && name[len(name)-1] == '/' {
+		name = strings.TrimRight(name, "/")
+	}
 
 	if v, ok := l.fm[name]; ok {
 		return &v, nil
 	}
 
 	for _, v := range l.fm {
-		if v.path == name {
+		if strings.HasPrefix(v.path, name) {
 			return createDirFile(name, l.fm), nil
 		}
 	}
 
-	return nil, ErrNotFound
+	return nil, os.ErrNotExist
 }
 
 // New{{.Suffix}}Loader returns a new AssetLoader for the {{.Suffix}} resources.

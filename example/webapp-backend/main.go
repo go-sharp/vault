@@ -39,6 +39,7 @@ func main() {
 	http.HandleFunc("/api/time", timeHandler)
 
 	http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(loader)))
+	http.Handle("/files2/", http.StripPrefix("/files2/", http.FileServer(http.Dir("../webapp-frontend/build"))))
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fp := r.URL.Path
