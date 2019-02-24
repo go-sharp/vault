@@ -9,10 +9,8 @@ package res
 import (
 	"compress/zlib"
 	"errors"
-	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 	"time"
 )
@@ -133,9 +131,9 @@ func (m memFile) Sys() interface{} {
 }
 
 type memDir struct {
-	dir    string
-	fm     assetMap
-	offset int
+	dir   string
+	files []os.FileInfo
+	size  int64
 }
 
 func (m memDir) Close() error {
@@ -150,99 +148,56 @@ func (m memDir) Seek(offset int64, whence int) (int64, error) {
 	return 0, errors.New("Seek: invalid operation on directory")
 }
 
-func (m memDir) Readdir(count int) ([]os.FileInfo, error) {
-	var files []os.FileInfo
-	var dirs []string
-	contains := func(s string) bool {
-		for i := range dirs {
-			if dirs[i] == s {
-				return true
-			}
+func (m *memDir) Readdir(count int) ([]os.FileInfo, error) {
+	defer func() {
+		if count <= 0 || count >= len(m.files) {
+			m.files = m.files[0:0]
+		} else {
+			m.files = m.files[:count]
 		}
-		return false
+	}()
+
+	if count <= 0 {
+		return m.files[:], nil
+	} else if count >= len(m.files) {
+		return m.files[:], io.EOF
 	}
 
-	for _, v := range m.fm {
-		if v.path == m.dir {
-			files = append(files, v)
-			continue
-		}
-		if strings.HasPrefix(v.path, m.dir) {
-			path := strings.TrimLeft(v.path, m.dir)
-			path = strings.TrimRightFunc(path, func(rune) bool {
-				// TODO: Remove trailing path segments
-				return false
-			})
-			if !contains(path) {
-				dirs = append(dirs, path)
-				files = append(files, memDir{dir: fmt.Sprintf("%v/%v", m.dir, path), fm: m.fm.filterPath(m.dir)})
-			}
-		}
-	}
-
-	sort.Slice(files, func(i int, j int) bool {
-		first := files[i]
-		second := files[j]
-
-		switch ft := first.(type) {
-		case memDir:
-			st, ok := second.(memDir)
-			if ok {
-				return ft.dir < st.dir
-			}
-			return true
-		case memFile:
-			st, ok := second.(memFile)
-			if ok {
-				return ft.name < st.name
-			}
-			return false
-		default:
-			panic("invalid slice type")
-		}
-	})
-
-	return nil, nil
+	return m.files[:count], nil
 }
 
 func (m memDir) Stat() (os.FileInfo, error) {
-	panic("not implemented")
+	return m, nil
 }
 
 func (m memDir) Name() string {
-	panic("not implemented")
+	if m.dir == "/" {
+		return "/"
+	}
+	return m.dir[strings.LastIndex(m.dir, "/"):]
 }
 
 func (m memDir) Size() int64 {
-	panic("not implemented")
+	return m.size
 }
 
 func (m memDir) Mode() os.FileMode {
-	panic("not implemented")
+	return os.FileMode(0555)
 }
 
 func (m memDir) ModTime() time.Time {
-	panic("not implemented")
+	// Until now no directory information is stored
+	// in the asset data, so for now we return the current
+	// time.
+	return time.Now()
 }
 
 func (m memDir) IsDir() bool {
-	panic("not implemented")
+	return true
 }
 
 func (m memDir) Sys() interface{} {
-	panic("not implemented")
-}
-
-type assetMap map[string]memFile
-
-func (a assetMap) filterPath(path string) assetMap {
-	mm := assetMap{}
-	for k, v := range a {
-		if strings.HasPrefix(v.path, path) {
-			mm[k] = v
-		}
-	}
-	return mm
+	return nil
 }
 
 type loader struct {
@@ -253,10 +208,18 @@ func (l loader) Load(name string) (File, error) {
 	if !strings.HasPrefix(name, "/") {
 		name = "/" + name
 	}
+	name = strings.TrimRight(name, "/")
 
 	if v, ok := l.fm[name]; ok {
 		return &v, nil
 	}
+
+	for _, v := range l.fm {
+		if v.path == name {
+			return createDirFile(name, l.fm), nil
+		}
+	}
+
 	return nil, ErrNotFound
 }
 

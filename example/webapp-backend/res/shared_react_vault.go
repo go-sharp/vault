@@ -6,8 +6,11 @@ package res
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strings"
 )
 
 // ErrNotFound is returned if the requested file was not found.
@@ -26,4 +29,45 @@ type File interface {
 type AssetLoader interface {
 	// Load loads a file from the vault.
 	Load(name string) (File, error)
+}
+
+type assetMap map[string]memFile
+
+func createDirFile(path string, assets assetMap) File {
+	md := memDir{dir: path}
+	dirs := map[string]*memDir{}
+
+	for k, v := range assets {
+		if k == md.dir {
+			md.files = append(md.files, &v)
+			continue
+		}
+		if strings.HasPrefix(k, md.dir) {
+			p := strings.TrimLeft(k, md.dir)
+			if p[0] == '/' {
+				p = p[1:]
+			}
+
+			idx := len(p)
+			for i := 0; i < len(p); i++ {
+				if p[i] == '/' {
+					idx = i
+					break
+				}
+			}
+			p = p[:idx]
+			if dir, ok := dirs[p]; ok {
+				dir.size += v.size
+			} else {
+				newDir := memDir{dir: fmt.Sprintf("%v/%v", md.dir, p), size: v.size}
+				md.files = append(md.files, newDir)
+				dirs[p] = &newDir
+			}
+		}
+	}
+
+	sort.Slice(md.files, func(i int, j int) bool {
+		return md.files[i].Name() < md.files[j].Name()
+	})
+	return &md
 }
