@@ -234,7 +234,7 @@ func (m memDir) Name() string {
 	if m.dir == "/" {
 		return "/"
 	}
-	return m.dir[strings.LastIndex(m.dir, "/"):]
+	return m.dir[strings.LastIndex(m.dir, "/")+1:]
 }
 
 func (m memDir) Size() int64 {

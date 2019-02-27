@@ -4,11 +4,8 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
-	"mime"
 	"net/http"
-	"path/filepath"
 	"time"
 
 	"github.com/pkg/browser"
@@ -41,28 +38,28 @@ func main() {
 	http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(loader)))
 	http.Handle("/files2/", http.StripPrefix("/files2/", http.FileServer(http.Dir("../webapp-frontend/build"))))
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fp := r.URL.Path
-		if fp == "/" {
-			fp = "/index.html"
-		}
-		log.Printf("requesting: %v...", r.URL.Path)
+	// http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	// 	fp := r.URL.Path
+	// 	if fp == "/" {
+	// 		fp = "/index.html"
+	// 	}
+	// 	log.Printf("requesting: %v...", r.URL.Path)
 
-		f, err := loader.Open(fp)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		data, err := ioutil.ReadAll(f)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-		defer f.Close()
+	// 	f, err := loader.Open(fp)
+	// 	if err != nil {
+	// 		w.WriteHeader(http.StatusNotFound)
+	// 		return
+	// 	}
+	// 	data, err := ioutil.ReadAll(f)
+	// 	if err != nil {
+	// 		w.WriteHeader(http.StatusInternalServerError)
+	// 	}
+	// 	defer f.Close()
 
-		fi, _ := f.Stat()
-		w.Header().Set("Content-Type", mime.TypeByExtension(filepath.Ext(fi.Name())))
-		w.Write(data)
-	})
+	// 	fi, _ := f.Stat()
+	// 	w.Header().Set("Content-Type", mime.TypeByExtension(filepath.Ext(fi.Name())))
+	// 	w.Write(data)
+	// })
 
 	log.Println("webapp started, listening on port :8080...")
 	browser.OpenURL("http://localhost:8080")
