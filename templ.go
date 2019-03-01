@@ -102,13 +102,17 @@ func (m memFile) Readdir(count int) ([]os.FileInfo, error) {
 }
 
 func (m memFile) Close() error {
+	if m.r == nil {
+		return nil
+	}
 	return m.r.Close()
 }
 
 func (m *memFile) resetReader() (err error) {
-	var r io.ReadCloser
 	if m.r == nil {
+		var r io.ReadCloser
 		r, err = zlib.NewReader(strings.NewReader(vaultAssetBin{{.Suffix}}[m.offset : m.offset+m.length]))
+		m.r = r.(assetReader)
 	} else {
 		err = m.r.Reset(strings.NewReader(vaultAssetBin{{.Suffix}}[m.offset:m.offset+m.length]), nil)
 	}
@@ -117,7 +121,6 @@ func (m *memFile) resetReader() (err error) {
 		return err
 	}
 
-	m.r = r.(assetReader)
 	m.rOffset = 0
 	return nil
 }
@@ -140,7 +143,7 @@ func (m *memFile) Seek(offset int64, whence int) (int64, error) {
 		offset += m.rOffset
 	case io.SeekStart:
 	case io.SeekEnd:
-		offset += m.length
+		offset += m.size
 	default:
 		return 0, errors.New("Seek: invalid whence")
 
@@ -156,7 +159,7 @@ func (m *memFile) Seek(offset int64, whence int) (int64, error) {
 		}
 	}
 
-	buf := make([]byte, offset)
+	buf := make([]byte, offset - m.rOffset)
 	_, err := m.Read(buf)
 	return m.rOffset, err
 }
