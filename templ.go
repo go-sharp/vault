@@ -7,16 +7,12 @@ package vault
 
 const sharedTypesTempl = `
 import (
-	"errors"
 	"net/http"
 	"sort"
 	"strings"
 	"os"
 	"fmt"
 )
-
-// ErrNotFound is returned if the requested file was not found.
-var ErrNotFound = errors.New("file not found")
 
 // AssetLoader implements a function to load an asset from the vault
 type AssetLoader interface {
@@ -39,8 +35,8 @@ func createDirFile(path string, assets assetMap) http.File {
 		}
 
 		if strings.HasPrefix(val.path, path) {
-			dir := strings.TrimLeft(val.path, path)
-			dir = strings.TrimLeft(dir, "/")
+			dir := strings.TrimPrefix(val.path, path)
+			dir = strings.TrimPrefix(dir, "/")
 			if n := strings.Index(dir, "/"); n >= 0 {
 				dir = dir[:n]
 			}
@@ -231,21 +227,20 @@ func (m memDir) Seek(offset int64, whence int) (int64, error) {
 }
 
 func (m *memDir) Readdir(count int) ([]os.FileInfo, error) {
-	defer func() {
-		if count <= 0 || count >= len(m.files) {
-			m.files = m.files[0:0]
-		} else {
-			m.files = m.files[:count]
-		}
-	}()
+	var ret []os.FileInfo
 
-	if count <= 0 {
-		return m.files[:], nil
-	} else if count >= len(m.files) {
-		return m.files[:], io.EOF
+	if count <= 0 || count >= len(m.files) {
+		ret = m.files[:]
+		m.files = m.files[0:0]
+	} else {
+		ret = m.files[:count]
+		m.files = m.files[count:]
 	}
 
-	return m.files[:count], nil
+	if count > 0 && len(m.files) == 0 {
+		return ret, io.EOF
+	}
+	return ret, nil
 }
 
 func (m memDir) Stat() (os.FileInfo, error) {

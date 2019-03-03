@@ -18,6 +18,48 @@ import (
 	"github.com/go-sharp/vault/testdata/gen"
 )
 
+func TestReaddirMore(t *testing.T) {
+	fs := gen.NewGenLoader()
+	f, err := fs.Open("/")
+	if err != nil {
+		t.Fatalf("Open: missing file / error: %v\n", err)
+	}
+	defer f.Close()
+
+	fis, err := f.Readdir(8)
+	if err != io.EOF || len(fis) != 5 {
+		t.Fatalf("Readdir: error: %v | get %v want = 5\n", err, len(fis))
+	}
+}
+
+func TestReaddir(t *testing.T) {
+	fs := gen.NewGenLoader()
+	f, err := fs.Open("/")
+	if err != nil {
+		t.Fatalf("Open: missing file / error: %v\n", err)
+	}
+	defer f.Close()
+
+	fis, err := f.Readdir(2)
+	if err != nil {
+		t.Fatalf("Readdir: take 2 error: %v\n", err)
+	}
+
+	if fis[0].Name() != "bin" || fis[1].Name() != "data" {
+		t.Fatalf("Readdir: get %v & %v want: bin & data\n", fis[0].Name(), fis[1].Name())
+	}
+
+	fis, err = f.Readdir(1)
+	if err != nil || len(fis) != 1 {
+		t.Fatalf("Readdir: take 1 error: %v | %v\n", err, len(fis))
+	}
+
+	fis, err = f.Readdir(2)
+	if err != io.EOF || len(fis) != 2 {
+		t.Fatalf("Readdir: take rest error: %v | %v\n", err, len(fis))
+	}
+}
+
 func TestDirectoryContent(t *testing.T) {
 	type fi struct {
 		name  string
