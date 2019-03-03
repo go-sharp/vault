@@ -8,10 +8,11 @@ package vault
 const sharedTypesTempl = `
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"sort"
 	"strings"
+	"os"
+	"fmt"
 )
 
 // ErrNotFound is returned if the requested file was not found.
@@ -26,43 +27,61 @@ type AssetLoader interface {
 // assetMap holds all information about the embedded files
 type assetMap map[string]memFile
 
+// createDirFile creates a http.File for the given path.
 func createDirFile(path string, assets assetMap) http.File {
-	md := memDir{dir: path}
-	dirs := map[string]*memDir{}
+	var fis []os.FileInfo
+	processed := map[string]struct{}{}
 
-	for k, v := range assets {
-		if v.path == md.dir {
-			md.files = append(md.files, &v)
+	for _, val := range assets {
+		if val.path == path {
+			fis = append(fis, val)
 			continue
 		}
-		if strings.HasPrefix(k, md.dir) {
-			p := strings.TrimLeft(k, md.dir)
-			if p[0] == '/' {
-				p = p[1:]
+
+		if strings.HasPrefix(val.path, path) {
+			dir := strings.TrimLeft(val.path, path)
+			dir = strings.TrimLeft(dir, "/")
+			if n := strings.Index(dir, "/"); n >= 0 {
+				dir = dir[:n]
 			}
 
-			idx := len(p)
-			for i := 0; i < len(p); i++ {
-				if p[i] == '/' {
-					idx = i
-					break
+			if _, ok := processed[dir]; !ok {
+				var prefix string
+				if path == "/" {
+					prefix = "/" + dir
+				} else {
+					prefix = fmt.Sprintf("%v/%v", path, dir)
 				}
-			}
-			p = p[:idx]
-			if dir, ok := dirs[p]; ok {
-				dir.size += v.size
-			} else {
-				newDir := memDir{dir: fmt.Sprintf("%v/%v", md.dir, p), size: v.size}
-				md.files = append(md.files, newDir)
-				dirs[p] = &newDir
+
+				fis = append(fis, memDir{dir: dir, size: getSize(prefix, assets)})
+				processed[dir] = struct{}{}
 			}
 		}
 	}
 
-	sort.Slice(md.files, func(i int, j int) bool {
-		return md.files[i].Name() < md.files[j].Name()
+	sort.Slice(fis, func(i, j int) bool {
+		switch {
+		case fis[i].IsDir() && !fis[j].IsDir():
+			return true
+		case !fis[i].IsDir() && fis[j].IsDir():
+			return false
+		default:
+			return fis[i].Name() < fis[j].Name()
+		}
 	})
-	return &md
+
+	return &memDir{dir: path, size: getSize(path, assets), files: fis}
+}
+
+// getSize summarize all files under the given path.
+func getSize(path string, assets assetMap) int64 {
+	var cnt int64
+	for _, item := range assets {
+		if strings.HasPrefix(item.path, path) {
+			cnt += item.size
+		}
+	}
+	return cnt
 }
 `
 
@@ -269,6 +288,9 @@ type loader struct {
 
 func (l loader) Open(name string) (http.File, error) {
 	if !strings.HasPrefix(name, "/") {
+		if name == "." {
+			name = ""
+		}
 		name = "/" + name
 	}
 
@@ -322,10 +344,6 @@ type debugLoader struct {
 }
 
 func (d debugLoader) Open(name string) (http.File, error) {
-	if !strings.HasPrefix(name, "/") {
-		name = "/" + name
-	}
-
 	return os.Open(getFullPath(d.base, name))
 }
 

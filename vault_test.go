@@ -18,6 +18,81 @@ import (
 	"github.com/go-sharp/vault/testdata/gen"
 )
 
+func TestDirectoryContent(t *testing.T) {
+	type fi struct {
+		name  string
+		size  int64
+		isDir bool
+	}
+	testCases := []struct {
+		desc string
+		path string
+		want []fi
+	}{
+		{
+			desc: "Verify root directory",
+			path: "/",
+			want: []fi{
+				{name: "bin", size: 46768, isDir: true},
+				{name: "data", size: 133265, isDir: true},
+				{name: ".somespecialfile", size: 2945, isDir: false},
+				{name: "gopher.jpeg", size: 4664, isDir: false},
+				{name: "text.txt", size: 645, isDir: false},
+			},
+		},
+		{
+			desc: "Verify bin directory",
+			path: "/bin",
+			want: []fi{
+				{name: "structure.sql", size: 1618, isDir: false},
+				{name: "umlet.jar", size: 45150, isDir: false},
+			},
+		},
+		{
+			desc: "Verify /data directory",
+			path: "/data",
+			want: []fi{
+				{name: "json", size: 484, isDir: true},
+				{name: "css.css", size: 107415, isDir: false},
+				{name: "golang-header.jpg", size: 25366, isDir: false},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fs := gen.NewGenLoader()
+			f, err := fs.Open(tc.path)
+			if err != nil {
+				t.Fatalf("Open: missing file %v error: %v\n", tc.path, err)
+			}
+			defer f.Close()
+
+			fi, err := f.Readdir(0)
+			if err != nil {
+				t.Fatalf("Open: file %v error: %v\n", tc.path, err)
+			}
+
+			if len(fi) != len(tc.want) {
+				t.Fatalf("Open: files count get: %v want: %v\n", len(fi), len(tc.want))
+			}
+
+			for i := range fi {
+				if fi[i].Name() != tc.want[i].name {
+					t.Fatalf("Open: name get: %v want: %v\n", fi[i].Name(), tc.want[i].name)
+				}
+
+				if fi[i].IsDir() != tc.want[i].isDir {
+					t.Fatalf("Open: name = %v, isDir get: %v want: %v\n", fi[i].Name(), fi[i].IsDir(), tc.want[i].isDir)
+				}
+
+				if fi[i].Size() != tc.want[i].size {
+					t.Fatalf("Open: name= %v, size get: %v want: %v\n", fi[i].Name(), fi[i].Size(), tc.want[i].size)
+				}
+			}
+		})
+	}
+}
+
 func TestSeekInvalidOffset(t *testing.T) {
 	fname := "/text.txt"
 	fs := gen.NewGenLoader()
