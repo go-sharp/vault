@@ -2,6 +2,10 @@
 
 Vault is a simple tool to embed resource and asset files into a go binary. It generates go source files containing encoded and compressed resource files. The generated source code provides an api to retrieve the embedded resources without any additional dependencies and therefore the vault package is only needed to generate those source files.
 
+## Requirements
+
+go 1.9.7+
+
 ## Installation
 
 Install tool with `go get`:
@@ -116,7 +120,7 @@ import (
 func main() {
     // Create a loader (default: New{source folder name}Loader() -> can be changed with ResourceNameOption)
     loader := res.NewDistLoader()
-    f, err := loader.Load("/bg.jpg")
+    f, err := loader.Open("/bg.jpg")
     if err != nil {
         log.Fatalln(err)
     }
@@ -136,7 +140,7 @@ func main() {
         log.Fatalln(err)
     }
 
-    f2, err := loader.Load("/js/app.js")
+    f2, err := loader.Open("/js/app.js")
     if err != nil {
         log.Fatalln(err)
     }
@@ -162,26 +166,30 @@ The asset loader implements only one method:
 ```go
 // AssetLoader implements a function to load an asset from the vault
 type AssetLoader interface {
-	// Load loads a file from the vault.
-	Load(name string) (File, error)
+	// Open loads a file from the vault.
+	Open(name string) (File, error)
 }
 ```
 
-Load returns a file instance with the following interface or an error:
+Load returns a file instance with the following interface (see http.File) or an error:
 
 ```go
-// File is the vault abstraction of a file.
+// File is the interface definition in the http package.
 type File interface {
-	io.ReadCloser
-	// Size returns the size of the file.
-	Size() int64
-	// Name returns the name of the file.
-	Name() string
-	// ModTime returns the modification time.
-	ModTime() time.Time
-	// Path is the registered path within the vault.
-	Path() string
+        io.Closer
+        io.Reader
+        io.Seeker
+        Readdir(count int) ([]os.FileInfo, error)
+        Stat() (os.FileInfo, error)
 }
+```
+
+#### Use Loader in the http.FileServer handler
+
+The asset loader implements the `http.FileSystem` interface and can be used with the `http.FileServer` handler. Just pass the loader to the _FileServer_ function as follows:
+
+```go
+http.Handle("/", http.FileServer(res.NewDistLoader()))
 ```
 
 #### Development Mode

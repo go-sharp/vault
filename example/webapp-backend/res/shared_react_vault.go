@@ -5,29 +5,11 @@
 package res
 
 import (
-	"errors"
-	"io"
-	"time"
+	"net/http"
 )
-
-// ErrNotFound is returned if the requested file was not found.
-var ErrNotFound = errors.New("file not found")
-
-// File is the vault abstraction of a file.
-type File interface {
-	io.ReadCloser
-	// Size returns the size of the file.
-	Size() int64
-	// Name returns the name of the file.
-	Name() string
-	// ModTime returns the modification time.
-	ModTime() time.Time
-	// Path is the registered path within the vault.
-	Path() string
-}
 
 // AssetLoader implements a function to load an asset from the vault
 type AssetLoader interface {
-	// Load loads a file from the vault.
-	Load(name string) (File, error)
+	// Open loads a file from the vault.
+	Open(name string) (http.File, error)
 }

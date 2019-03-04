@@ -1,0 +1,4 @@
+github.com/go-sharp/vault v0.0.0-20181101192822-a9f50f844f7c h1:5bKLBxoMkJ+s5wdmZBdHz0FkJ8wWwPQ4L3/PDhq5BBQ=
+github.com/go-sharp/vault v0.0.0-20181101192822-a9f50f844f7c/go.mod h1:fTj+Nq6LrhXZngDQwRdD5OFGIlgCb6+gKPjDeTyWt64=
+github.com/pkg/browser v0.0.0-20180916011732-0a3d74bf9ce4 h1:49lOXmGaUpV9Fz3gd7TFZY106KVlPVa5jcYD1gaQf98=
+github.com/pkg/browser v0.0.0-20180916011732-0a3d74bf9ce4/go.mod h1:4OwLy04Bl9Ef3GJJCoec+30X3LQs/0/m4HFRt/2LUSA=

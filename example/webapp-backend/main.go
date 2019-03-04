@@ -4,16 +4,13 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
-	"mime"
 	"net/http"
-	"path/filepath"
 	"time"
 
 	"github.com/pkg/browser"
 
-	"github.com/go-sharp/vault/example/webapp-backend/res"
+	res "github.com/go-sharp/vault/example/webapp-backend/res"
 )
 
 func sayHelloHandler(w http.ResponseWriter, r *http.Request) {
@@ -38,27 +35,7 @@ func main() {
 	http.HandleFunc("/api/sayhello", sayHelloHandler)
 	http.HandleFunc("/api/time", timeHandler)
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fp := r.URL.Path
-		if fp == "/" {
-			fp = "/index.html"
-		}
-		log.Printf("requesting: %v...", r.URL.Path)
-
-		f, err := loader.Load(fp)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		data, err := ioutil.ReadAll(f)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-		defer f.Close()
-
-		w.Header().Set("Content-Type", mime.TypeByExtension(filepath.Ext(f.Name())))
-		w.Write(data)
-	})
+	http.Handle("/", http.FileServer(loader))
 
 	log.Println("webapp started, listening on port :8080...")
 	browser.OpenURL("http://localhost:8080")
