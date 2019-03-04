@@ -8,76 +8,12 @@ package vault
 const sharedTypesTempl = `
 import (
 	"net/http"
-	"sort"
-	"strings"
-	"os"
-	"fmt"
 )
 
 // AssetLoader implements a function to load an asset from the vault
 type AssetLoader interface {
 	// Open loads a file from the vault.
 	Open(name string) (http.File, error)
-}
-
-// assetMap holds all information about the embedded files
-type assetMap map[string]memFile
-
-// createDirFile creates a http.File for the given path.
-func createDirFile(path string, assets assetMap) http.File {
-	var fis []os.FileInfo
-	processed := map[string]struct{}{}
-
-	for _, val := range assets {
-		if val.path == path {
-			fis = append(fis, val)
-			continue
-		}
-
-		if strings.HasPrefix(val.path, path) {
-			dir := strings.TrimPrefix(val.path, path)
-			dir = strings.TrimPrefix(dir, "/")
-			if n := strings.Index(dir, "/"); n >= 0 {
-				dir = dir[:n]
-			}
-
-			if _, ok := processed[dir]; !ok {
-				var prefix string
-				if path == "/" {
-					prefix = "/" + dir
-				} else {
-					prefix = fmt.Sprintf("%v/%v", path, dir)
-				}
-
-				fis = append(fis, memDir{dir: dir, size: getSize(prefix, assets)})
-				processed[dir] = struct{}{}
-			}
-		}
-	}
-
-	sort.Slice(fis, func(i, j int) bool {
-		switch {
-		case fis[i].IsDir() && !fis[j].IsDir():
-			return true
-		case !fis[i].IsDir() && fis[j].IsDir():
-			return false
-		default:
-			return fis[i].Name() < fis[j].Name()
-		}
-	})
-
-	return &memDir{dir: path, size: getSize(path, assets), files: fis}
-}
-
-// getSize summarize all files under the given path.
-func getSize(path string, assets assetMap) int64 {
-	var cnt int64
-	for _, item := range assets {
-		if strings.HasPrefix(item.path, path) {
-			cnt += item.size
-		}
-	}
-	return cnt
 }
 `
 
@@ -87,6 +23,8 @@ import (
 	"errors"
 	"io"
 	"os"
+	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"net/http"
@@ -323,6 +261,67 @@ func New{{.Suffix}}Loader() AssetLoader {
 	}
 	return loader
 }
+
+
+// assetMap holds all information about the embedded files
+type assetMap map[string]memFile
+
+// createDirFile creates a http.File for the given path.
+func createDirFile(path string, assets assetMap) http.File {
+	var fis []os.FileInfo
+	processed := map[string]struct{}{}
+
+	for _, val := range assets {
+		if val.path == path {
+			fis = append(fis, val)
+			continue
+		}
+
+		if strings.HasPrefix(val.path, path) {
+			dir := strings.TrimPrefix(val.path, path)
+			dir = strings.TrimPrefix(dir, "/")
+			if n := strings.Index(dir, "/"); n >= 0 {
+				dir = dir[:n]
+			}
+
+			if _, ok := processed[dir]; !ok {
+				var prefix string
+				if path == "/" {
+					prefix = "/" + dir
+				} else {
+					prefix = fmt.Sprintf("%v/%v", path, dir)
+				}
+
+				fis = append(fis, memDir{dir: dir, size: getSize(prefix, assets)})
+				processed[dir] = struct{}{}
+			}
+		}
+	}
+
+	sort.Slice(fis, func(i, j int) bool {
+		switch {
+		case fis[i].IsDir() && !fis[j].IsDir():
+			return true
+		case !fis[i].IsDir() && fis[j].IsDir():
+			return false
+		default:
+			return fis[i].Name() < fis[j].Name()
+		}
+	})
+
+	return &memDir{dir: path, size: getSize(path, assets), files: fis}
+}
+
+// getSize summarize all files under the given path.
+func getSize(path string, assets assetMap) int64 {
+	var cnt int64
+	for _, item := range assets {
+		if strings.HasPrefix(item.path, path) {
+			cnt += item.size
+		}
+	}
+	return cnt
+}
 `
 
 const debugFileTemp = `
@@ -330,7 +329,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"strings"
 	"net/http"
 )
 
