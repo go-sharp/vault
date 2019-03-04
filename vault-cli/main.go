@@ -10,7 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/go-sharp/vault"
+	vault "github.com/go-sharp/vault/v2"
 )
 
 type arrayFlag []string

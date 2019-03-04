@@ -1,4 +1,4 @@
-//go:generate vault-cli -s -n react ../webapp-frontend/build ./resv2
+//go:generate vault-cli -s -n react ../webapp-frontend/build ./res
 
 package main
 
@@ -10,7 +10,7 @@ import (
 
 	"github.com/pkg/browser"
 
-	res "github.com/go-sharp/vault/example/webapp-backend/resv2"
+	res "github.com/go-sharp/vault/example/webapp-backend/res"
 )
 
 func sayHelloHandler(w http.ResponseWriter, r *http.Request) {
@@ -35,31 +35,7 @@ func main() {
 	http.HandleFunc("/api/sayhello", sayHelloHandler)
 	http.HandleFunc("/api/time", timeHandler)
 
-	http.Handle("/files/", http.StripPrefix("/files/", http.FileServer(loader)))
-	http.Handle("/files2/", http.StripPrefix("/files2/", http.FileServer(http.Dir("../webapp-frontend/build"))))
-
-	// http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-	// 	fp := r.URL.Path
-	// 	if fp == "/" {
-	// 		fp = "/index.html"
-	// 	}
-	// 	log.Printf("requesting: %v...", r.URL.Path)
-
-	// 	f, err := loader.Open(fp)
-	// 	if err != nil {
-	// 		w.WriteHeader(http.StatusNotFound)
-	// 		return
-	// 	}
-	// 	data, err := ioutil.ReadAll(f)
-	// 	if err != nil {
-	// 		w.WriteHeader(http.StatusInternalServerError)
-	// 	}
-	// 	defer f.Close()
-
-	// 	fi, _ := f.Stat()
-	// 	w.Header().Set("Content-Type", mime.TypeByExtension(filepath.Ext(fi.Name())))
-	// 	w.Write(data)
-	// })
+	http.Handle("/", http.FileServer(loader))
 
 	log.Println("webapp started, listening on port :8080...")
 	browser.OpenURL("http://localhost:8080")

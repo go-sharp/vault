@@ -8,20 +8,16 @@ package res
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path"
-	"strings"
 )
 
 type debugLoader struct {
 	base string
 }
 
-func (d debugLoader) Open(name string) (File, error) {
-	if !strings.HasPrefix(name, "/") {
-		name = "/" + name
-	}
-
+func (d debugLoader) Open(name string) (http.File, error) {
 	return os.Open(getFullPath(d.base, name))
 }
 
